@@ -33,3 +33,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal docs (contain secrets/config in comments)
+AGENTS.md
+Exotel_AI_Voice_Agent_API_Reference.md
