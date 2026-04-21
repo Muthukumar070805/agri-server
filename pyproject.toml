@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "sarvamai>=0.1.27",
-
     "fastapi>=0.135.3",
     "httpx>=0.28.1",
     "pytest>=9.0.3",
@@ -24,6 +23,9 @@ dependencies = [
     "langchain-ollama>=0.1.0",
     "sentence-transformers>=3.0.0",
     "requests>=2.31.0",
+    "pyaudio>=0.2.14",
+    "pipecat-ai>=0.0.108",
+    "python-socketio[asyncio]>=5.11.0",
 ]
 
 [tool.setuptools]

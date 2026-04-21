@@ -37,3 +37,26 @@ Thumbs.db
 # Internal docs (contain secrets/config in comments)
 AGENTS.md
 Exotel_AI_Voice_Agent_API_Reference.md
+
+# Agent skills (personal coding assistant config)
+.agents/
+
+# Python version
+.python-version
+
+# Server logs
+server.err
+server.log
+server_err.log
+
+# Test files
+run_test.py
+test_server.py
+test_socket.py
+test_ws.py
+
+# Opencode config
+skills-lock.json
+
+# Temp files
+session-ses_281d.md
