@@ -7,6 +7,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import nest_asyncio
+nest_asyncio.apply()
+
 from app.websocket.handler import handle_websocket
 from app.api.text_chat import router
 from app.core.logger import get_logger

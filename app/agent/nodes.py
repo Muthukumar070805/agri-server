@@ -34,7 +34,7 @@ def tool_node(state: AgentState) -> AgentState:
     if state["query_type"] == "tool":
         result = get_farm_data.invoke({"farm_id": "default"})
         try:
-            state["tool_data"] = json.loads(result.content)
+            state["tool_data"] = json.loads(result)
         except json.JSONDecodeError:
             state["tool_data"] = {}
     else:

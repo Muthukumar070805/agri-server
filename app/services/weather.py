@@ -1,3 +1,4 @@
+import asyncio
 from app.core.logger import get_logger
 from app.services.redis_cache import redis_cache
 
@@ -20,11 +21,24 @@ WEATHER_CODES = {
 }
 
 
-def get_weather() -> str:
-    import asyncio
-
+def _run_async(coro):
+    """Run async coroutine in new event loop (sync context)."""
     try:
-        data = asyncio.run(redis_cache.get(f"weather:{farm_id}"))
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return asyncio.run(coro)
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+def get_weather(farm_id: str = "default") -> str:
+    try:
+        async def _get():
+            return await redis_cache.get(f"weather:{farm_id}")
+
+        data = _run_async(_get())
 
         if not data:
             return "Weather data not available"

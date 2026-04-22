@@ -54,6 +54,7 @@ run_test.py
 test_server.py
 test_socket.py
 test_ws.py
+tests/
 
 # Opencode config
 skills-lock.json

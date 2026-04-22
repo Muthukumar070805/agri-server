@@ -23,14 +23,14 @@ class RedisCache:
             )
         return self._client
 
-    async def get_weather(self) -> Optional[dict]:
+    async def get_weather(self, farm_id: str = "default") -> Optional[dict]:
         try:
             client = await self.get_client()
-            key = "weather"
+            key = f"weather:{farm_id}"
             data = await client.json().get(key)
             return data
         except Exception as e:
-            logger.error(f"Redis JSON GET error for weather: {e}")
+            logger.error(f"Redis JSON GET error for weather:{farm_id}: {e}")
             return None
 
     async def get(self, key: str) -> Optional[str]:

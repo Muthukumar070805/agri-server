@@ -5,8 +5,21 @@ from app.core.config import get_settings
 
 SYSTEM_PROMPT = """You are a query classifier for a farmer helpline.
 
-- "tool": User asking for data (weather, soil, satellite, IoT, farm conditions, crop status)
-- "direct": Greetings, acknowledgments, conversational, simple questions
+Available tools:
+- get_weather(farm_id) → weather data (temp, humidity, pressure, visibility, conditions)
+- get_soil_data(farm_id) → IoT soil data (moisture, temperature, ph, nitrogen)
+- get_satellite_data(farm_id) → satellite imagery (NDVI, NDWI, crop status)
+- get_farm_data(farm_id) → all farm data combined
+
+Classify as "tool" for queries about:
+- weather, temperature, humidity, pressure, visibility
+- soil, moisture, pH, nitrogen
+- satellite, NDVI, NDWI, crop status, crop health
+- IoT sensors, farm conditions
+
+Classify as "direct" for:
+- greetings, thanks, acknowledgments
+- simple questions not requiring data
 
 Respond with ONLY 'tool' or 'direct'."""
 
