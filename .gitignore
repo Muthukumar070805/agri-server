@@ -61,3 +61,11 @@ skills-lock.json
 
 # Temp files
 session-ses_281d.md
+
+# Untracked files/folders to ignore
+CLAUDE.md
+rag_plan.md
+gemina_suggestion.md
+metadata.json
+agents/
+scripts/

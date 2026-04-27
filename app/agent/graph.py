@@ -23,11 +23,13 @@ def compile_graph():
         route_query,
         {
             "tool": "tool",
+            "scheme": "rag",
             "direct": "direct",
         },
     )
 
     graph.add_edge("tool", "direct")
+    graph.add_edge("rag", "direct")
     graph.add_edge("direct", END)
 
     return graph.compile()

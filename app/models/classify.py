@@ -1,15 +1,17 @@
 from typing import Literal
+import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.models.ollama import get_chat_llm
 from app.core.config import get_settings
 
-SYSTEM_PROMPT = """You are a query classifier for a farmer helpline.
+CROPS = ["all", "coconut", "groundnut", "horticulture", "millets", "oilpalm", "oilseeds", "paddy", "pulses", "sugarcane", "vegetables"]
+SCHEME_TYPES = ["award_incentive", "credit_loan", "crop_insurance", "crop_productivity", "farm_mechanization", "farmer_organization", "input_subsidy", "irrigation", "organic_farming", "pest_management", "planting_material", "seed_production", "soil_health", "training_extension"]
 
-Available tools:
-- get_weather(farm_id) → weather data (temp, humidity, pressure, visibility, conditions)
-- get_soil_data(farm_id) → IoT soil data (moisture, temperature, ph, nitrogen)
-- get_satellite_data(farm_id) → satellite imagery (NDVI, NDWI, crop status)
-- get_farm_data(farm_id) → all farm data combined
+SYSTEM_PROMPT = f"""You are a query classifier for a farmer helpline.
+
+Available metadata filters:
+- Crops: {', '.join(CROPS)}
+- Scheme Types: {', '.join(SCHEME_TYPES)}
 
 Classify as "tool" for queries about:
 - weather, temperature, humidity, pressure, visibility
@@ -17,14 +19,24 @@ Classify as "tool" for queries about:
 - satellite, NDVI, NDWI, crop status, crop health
 - IoT sensors, farm conditions
 
+Classify as "scheme" for queries about:
+- government schemes, subsidies, loans, insurance, policies
+- agricultural schemes, PM-Kisan, crop insurance
+- grants, incentives, financial assistance
+
 Classify as "direct" for:
 - greetings, thanks, acknowledgments
 - simple questions not requiring data
 
-Respond with ONLY 'tool' or 'direct'."""
+Also extract metadata filters from the query if scheme-related:
+- Look for crop names: {', '.join(CROPS)}
+- Look for scheme types: {', '.join(SCHEME_TYPES)}
+
+Respond with ONLY a JSON object in this exact format:
+{{"query_type": "tool" | "scheme" | "direct", "filters": {{"crop": "..." | null, "type": "..." | null}}}}"""
 
 
-def classify_query(query: str) -> Literal["tool", "direct"]:
+def classify_query(query: str) -> tuple[Literal["tool", "scheme", "direct"], dict]:
     settings = get_settings()
     llm = get_chat_llm(model=settings.ollama_flash_model, temperature=0.1)
 
@@ -32,7 +44,20 @@ def classify_query(query: str) -> Literal["tool", "direct"]:
         [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=query)]
     )
 
-    content = response.content.strip().lower()
-    if "tool" in content:
-        return "tool"
-    return "direct"
+    content = response.content.strip()
+    
+    try:
+        result = json.loads(content)
+        query_type = result.get("query_type", "direct")
+        filters = result.get("filters", {})
+    except json.JSONDecodeError:
+        content_lower = content.lower()
+        if any(k in content_lower for k in ["subsidy", "loan", "scheme", "insurance", "grant", "incentive", "pm-kisan"]):
+            query_type = "scheme"
+        elif any(k in content_lower for k in ["weather", "soil", "moisture", "satellite", "ndvi", "iot", "temperature"]):
+            query_type = "tool"
+        else:
+            query_type = "direct"
+        filters = {}
+
+    return query_type, filters
