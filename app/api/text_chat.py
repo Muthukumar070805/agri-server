@@ -25,13 +25,15 @@ async def text_chat(request: ChatRequest):
     session = session_manager.get_or_create(request.session_id)
     session.add_message("user", request.query)
 
+    history = session.messages[-10:]
+
     try:
         result = agent.invoke(
             {
                 "query": request.query,
                 "query_type": "direct",
                 "tool_data": {},
-                "context": [],
+                "context": history,
                 "response": "",
                 "session_id": request.session_id,
             }
