@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -13,6 +14,7 @@ nest_asyncio.apply()
 from app.websocket.handler import handle_websocket
 from app.api.text_chat import router
 from app.core.logger import get_logger
+from app.services.rag import preload_reranker
 
 logger = get_logger(__name__)
 
@@ -20,7 +22,15 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Server starting...")
+    def _preload():
+        try:
+            preload_reranker()
+        except Exception as e:
+            logger.error(f"Failed to preload reranker: {e}")
+    thread = threading.Thread(target=_preload, daemon=True)
+    thread.start()
     yield
+    thread.join(timeout=5)
     logger.info("Server shutting down")
 
 

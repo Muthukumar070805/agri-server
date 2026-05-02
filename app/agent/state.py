@@ -1,4 +1,4 @@
-from typing import TypedDict, Literal
+﻿from typing import TypedDict, Literal, Callable, Optional
 
 
 class AgentState(TypedDict):
@@ -10,3 +10,4 @@ class AgentState(TypedDict):
     context: list
     response: str
     session_id: str
+    stream_callback: Optional[Callable]

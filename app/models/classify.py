@@ -1,8 +1,7 @@
 from typing import Literal
 import json
-from langchain_core.messages import HumanMessage, SystemMessage
-from app.models.ollama import get_chat_llm
-from app.core.config import get_settings
+from langchain_core.messages import SystemMessage, HumanMessage
+from app.models.provider import ProviderSelector
 
 CROPS = ["all", "coconut", "groundnut", "horticulture", "millets", "oilpalm", "oilseeds", "paddy", "pulses", "sugarcane", "vegetables"]
 SCHEME_TYPES = ["award_incentive", "credit_loan", "crop_insurance", "crop_productivity", "farm_mechanization", "farmer_organization", "input_subsidy", "irrigation", "organic_farming", "pest_management", "planting_material", "seed_production", "soil_health", "training_extension"]
@@ -29,23 +28,22 @@ Classify as "direct" for:
 - simple questions not requiring data
 
 Also extract metadata filters from the query if scheme-related:
-- Look for crop names: {', '.join(CROPS)}
-- Look for scheme types: {', '.join(SCHEME_TYPES)}
+    - Look for scheme types: {', '.join(SCHEME_TYPES)}
 
-Respond with ONLY a JSON object in this exact format:
-{{"query_type": "tool" | "scheme" | "direct", "filters": {{"crop": "..." | null, "type": "..." | null}}}}"""
+    Respond with ONLY a JSON object in this exact format:
+    {{"query_type": "tool" | "scheme" | "direct", "filters": {{"type": "..." | null}}}}"""
 
 
-def classify_query(query: str) -> tuple[Literal["tool", "scheme", "direct"], dict]:
-    settings = get_settings()
-    llm = get_chat_llm(model=settings.ollama_flash_model, temperature=0.1)
+async def classify_query(query: str) -> tuple[Literal["tool", "scheme", "direct"], dict]:
+    selector = ProviderSelector()
+    llm = selector.get_chat_llm(model=selector.resolve_model("classify"), temperature=0.1)
 
-    response = llm.invoke(
+    response = await llm.ainvoke(
         [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=query)]
     )
 
     content = response.content.strip()
-    
+
     try:
         result = json.loads(content)
         query_type = result.get("query_type", "direct")

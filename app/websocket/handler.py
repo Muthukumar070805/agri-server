@@ -1,6 +1,7 @@
-from fastapi import WebSocket, WebSocketDisconnect, Query
+﻿from fastapi import WebSocket, WebSocketDisconnect, Query
 from typing import Optional
 import json
+import asyncio
 
 from app.agent.graph import agent
 from app.services.session import session_manager
@@ -38,28 +39,52 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
 
             history = session.messages[-10:]
 
-            try:
-                result = agent.invoke(
-                    {
-                        "query": message,
-                        "query_type": "direct",
-                        "tool_data": {},
-                        "context": history,
-                        "response": "",
-                        "session_id": session_id,
-                    }
-                )
+            queue: asyncio.Queue = asyncio.Queue()
 
-                response_text = result.get("response", "No response generated")
-            except Exception as e:
-                logger.error(f"Agent error: {e}")
-                response_text = "Sorry, I'm having trouble processing your request. Please try again."
+            async def on_token(token: str):
+                await queue.put(token)
+
+            async def run_agent():
+                try:
+                    result = await agent.ainvoke(
+                        {
+                            "query": message,
+                            "query_type": "direct",
+                            "tool_data": {},
+                            "context": history,
+                            "response": "",
+                            "session_id": session_id,
+                            "stream_callback": on_token,
+                        }
+                    )
+                    await queue.put(None)
+                    return result
+                except Exception as e:
+                    logger.error(f"Agent error: {e}")
+                    await queue.put(None)
+                    return None
+
+            task = asyncio.create_task(run_agent())
+
+            while True:
+                token = await queue.get()
+                if token is None:
+                    break
+                await websocket.send_json({"chunk": token})
+
+            try:
+                result = await task
+                response_text = result.get("response", "No response generated") if result else "Sorry, I'm having trouble processing your request."
+            except Exception:
+                response_text = "Sorry, I'm having trouble processing your request."
 
             session.add_message("assistant", response_text)
 
-            await websocket.send_json(
-                {"response": response_text, "session_id": session_id}
-            )
+            await websocket.send_json({
+                "done": True,
+                "response": response_text,
+                "session_id": session_id,
+            })
 
             logger.info(f"Response sent: {response_text[:50]}...")
 

@@ -28,7 +28,7 @@ async def text_chat(request: ChatRequest):
     history = session.messages[-10:]
 
     try:
-        result = agent.invoke(
+        result = await agent.ainvoke(
             {
                 "query": request.query,
                 "query_type": "direct",

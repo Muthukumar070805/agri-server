@@ -14,8 +14,14 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
 
     pinecone_api_key: str = ""
-    pinecone_environment: str = ""
+    pinecone_host: str = ""
     pinecone_index: str = ""
+
+    # Provider selection
+    provider: str = "mistral"  # "ollama" | "mistral"
+    mistral_api_key: str = ""
+    mistral_model: str = "mistral-small-latest"
+    mistral_reasoning_model: str = "mistral-large-latest"
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_flash_model: str = "minimax-m2.7:cloud"

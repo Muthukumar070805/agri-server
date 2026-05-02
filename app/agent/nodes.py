@@ -1,56 +1,33 @@
 from app.agent.state import AgentState
 from app.models.classify import classify_query
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.prebuilt import create_react_agent
-from app.models.ollama import get_chat_llm
-from app.agent.tools import (
-    get_weather,
-    get_scheme_info,
-    get_soil_data,
-    get_satellite_data,
-    get_farm_data,
-)
-import json
 import asyncio
+import json
 
 
-tools = [get_weather, get_scheme_info, get_soil_data, get_satellite_data]
-
-
-def classify(state: AgentState) -> AgentState:
+async def classify(state: AgentState) -> AgentState:
     query = state["query"]
-    query_type, filters = classify_query(query)
+    query_type, filters = await classify_query(query)
     state["query_type"] = query_type
     state["filters"] = filters
     return state
 
 
-def rag_node(state: AgentState) -> AgentState:
-    query = state["query"]
-    filters = state.get("filters", {})
+async def rag_node(state: AgentState) -> AgentState:
+    from app.services.rag import aquery_schemes
 
-    from app.services.rag import query_schemes
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        result = loop.run_until_complete(
-            query_schemes(
-                query=query,
-                crop=filters.get("crop"),
-                scheme_type=filters.get("type")
-            )
-        )
-    finally:
-        loop.close()
-
+    result = await aquery_schemes(
+        query=state["query"],
+        scheme_type=state.get("filters", {}).get("type")
+    )
     state["scheme_data"] = result
     return state
 
 
-def tool_node(state: AgentState) -> AgentState:
+async def tool_node(state: AgentState) -> AgentState:
+    from app.agent.tools import get_farm_data
+
     if state["query_type"] == "tool":
-        result = get_farm_data.invoke({"farm_id": "default"})
+        result = await asyncio.to_thread(get_farm_data.invoke, {"farm_id": "default"})
         try:
             state["tool_data"] = json.loads(result)
         except json.JSONDecodeError:
@@ -60,7 +37,7 @@ def tool_node(state: AgentState) -> AgentState:
     return state
 
 
-def direct_node(state: AgentState) -> AgentState:
+async def direct_node(state: AgentState) -> AgentState:
     from app.models.reasoning import ReasoningLLM
 
     query = state["query"]
@@ -81,12 +58,20 @@ def direct_node(state: AgentState) -> AgentState:
         context_str = f"\n\nConversation History:\n{json.dumps(context, indent=2)}"
 
     full_prompt = f"User Query: {query}{tool_info}{scheme_info}{context_str}"
-
     system_msg = "You are a helpful AI assistant for a farmer helpline. Use the provided farm data and scheme information to answer user questions accurately. Be concise for voice output."
-    llm = ReasoningLLM()
-    response = llm.generate(full_prompt, system=system_msg)
 
-    state["response"] = response
+    llm = ReasoningLLM()
+    full_response = ""
+    callback = state.get("stream_callback")
+
+    if callback:
+        async for token in llm.astream(full_prompt, system=system_msg):
+            full_response += token
+            await callback(token)
+    else:
+        full_response = llm.generate(full_prompt, system=system_msg)
+
+    state["response"] = full_response
     return state
 
 
