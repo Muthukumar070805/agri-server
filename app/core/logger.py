@@ -1,9 +1,7 @@
 import logging
 import sys
-import os
 from logging.handlers import RotatingFileHandler
 
-LOG_DIR = "."
 MAX_BYTES = 10 * 1024 * 1024  # 10MB
 
 

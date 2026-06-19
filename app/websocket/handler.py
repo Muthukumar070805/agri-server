@@ -1,5 +1,4 @@
-﻿from fastapi import WebSocket, WebSocketDisconnect, Query
-from typing import Optional
+from fastapi import WebSocket, WebSocketDisconnect
 import json
 import asyncio
 
@@ -22,6 +21,7 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
             try:
                 message_data = json.loads(data)
                 message = message_data.get("message", "")
+                current_session_id = message_data.get("session_id", session_id)
             except json.JSONDecodeError:
                 await websocket.send_json(
                     {"error": "Invalid JSON format", "session_id": session_id}
@@ -30,11 +30,11 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
 
             if not message.strip():
                 await websocket.send_json(
-                    {"error": "Empty message", "session_id": session_id}
+                    {"error": "Empty message", "session_id": current_session_id}
                 )
                 continue
 
-            session = session_manager.get_or_create(session_id)
+            session = await session_manager.get_or_create(current_session_id)
             session.add_message("user", message)
 
             history = session.messages[-10:]
@@ -50,10 +50,12 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
                         {
                             "query": message,
                             "query_type": "direct",
+                            "filters": {},
                             "tool_data": {},
+                            "scheme_data": {},
                             "context": history,
                             "response": "",
-                            "session_id": session_id,
+                            "session_id": current_session_id,
                             "stream_callback": on_token,
                         }
                     )
@@ -74,17 +76,38 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
 
             try:
                 result = await task
-                response_text = result.get("response", "No response generated") if result else "Sorry, I'm having trouble processing your request."
+                response_text = (
+                    result.get("response", "No response generated")
+                    if result
+                    else "Sorry, I'm having trouble processing your request."
+                )
+                query_type = (
+                    result.get("query_type", "unknown") if result else "unknown"
+                )
             except Exception:
                 response_text = "Sorry, I'm having trouble processing your request."
+                query_type = "unknown"
 
             session.add_message("assistant", response_text)
 
-            await websocket.send_json({
-                "done": True,
-                "response": response_text,
-                "session_id": session_id,
-            })
+            try:
+                asyncio.create_task(session_manager.save_session(session))
+            except Exception as e:
+                logger.debug(f"Session save error (non-blocking): {e}")
+
+            schemes_data = (
+                result.get("scheme_data", {}).get("schemes", []) if result else []
+            )
+
+            await websocket.send_json(
+                {
+                    "done": True,
+                    "response": response_text,
+                    "session_id": current_session_id,
+                    "scheme_list": schemes_data,
+                    "query_type": query_type,
+                }
+            )
 
             logger.info(f"Response sent: {response_text[:50]}...")
 
@@ -94,5 +117,5 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
         logger.error(f"WebSocket error: {e}")
         try:
             await websocket.send_json({"error": str(e), "session_id": session_id})
-        except:
+        except Exception:
             pass

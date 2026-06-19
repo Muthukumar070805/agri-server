@@ -1,7 +1,10 @@
+from typing import Optional
 from app.agent.state import AgentState
 from app.models.classify import classify_query
-import asyncio
+from langgraph.prebuilt import ToolNode
 import json
+
+_tool_node: Optional[ToolNode] = None
 
 
 async def classify(state: AgentState) -> AgentState:
@@ -16,8 +19,7 @@ async def rag_node(state: AgentState) -> AgentState:
     from app.services.rag import aquery_schemes
 
     result = await aquery_schemes(
-        query=state["query"],
-        scheme_type=state.get("filters", {}).get("type")
+        query=state["query"], scheme_type=state.get("filters", {}).get("type")
     )
     state["scheme_data"] = result
     return state
@@ -27,7 +29,7 @@ async def tool_node(state: AgentState) -> AgentState:
     from app.agent.tools import get_farm_data
 
     if state["query_type"] == "tool":
-        result = await asyncio.to_thread(get_farm_data.invoke, {"farm_id": "default"})
+        result = await get_farm_data(farm_id="default")
         try:
             state["tool_data"] = json.loads(result)
         except json.JSONDecodeError:

@@ -1,63 +1,53 @@
-import asyncio
+import json
+import httpx
 from app.core.logger import get_logger
 from app.services.redis_cache import redis_cache
+from app.core.config import get_settings
 
 logger = get_logger(__name__)
 
-WEATHER_CODES = {
-    "113": "Clear/Sunny",
-    "116": "Partly Cloudy",
-    "119": "Cloudy",
-    "122": "Overcast",
-    "176": "Light Rain",
-    "179": "Light Sleet",
-    "182": "Light Sleet",
-    "185": "Patchy Sleet",
-    "200": "Thunderstorm",
-    "227": "Snow",
-    "230": "Heavy Snow",
-    "248": "Fog",
-    "260": "Freezing Fog",
-}
+CACHE_TTL = 1800
 
 
-def _run_async(coro):
-    """Run async coroutine in new event loop (sync context)."""
+async def _build_url() -> str:
+    loc = get_settings().weather_location
+    return f"https://wttr.in/{loc}?format=j1"
+
+
+async def fetch_weather(farm_id: str = "default") -> str:
+    cached = await redis_cache.get(f"weather:{farm_id}")
+    if cached:
+        return cached
+
+    url = await _build_url()
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            return asyncio.run(coro)
-        else:
-            return loop.run_until_complete(coro)
-    except RuntimeError:
-        return asyncio.run(coro)
-
-
-def get_weather(farm_id: str = "default") -> str:
-    try:
-        async def _get():
-            return await redis_cache.get(f"weather:{farm_id}")
-
-        data = _run_async(_get())
-
-        if not data:
-            return "Weather data not available"
-
-        temp = data.get("temp_C", "N/A")
-        humidity = data.get("humidity", "N/A")
-        pressure = data.get("pressure", "N/A")
-        visibility = data.get("visibility", "N/A")
-        weather_code = data.get("weatherCode", "0")
-        condition = WEATHER_CODES.get(str(weather_code), "Unknown")
-
-        return (
-            f"Current Weather:\n"
-            f"- Temperature: {temp}°C\n"
-            f"- Condition: {condition}\n"
-            f"- Humidity: {humidity}%\n"
-            f"- Pressure: {pressure} mb\n"
-            f"- Visibility: {visibility} km"
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            raw = resp.json()
     except Exception as e:
-        logger.error(f"Weather read error: {e}")
-        return "Weather data not available"
+        logger.error(f"Weather API error: {e}")
+        if cached:
+            return cached
+        return json.dumps({"error": "Weather data temporarily unavailable"})
+
+    cc = raw["current_condition"][0]
+    data = json.dumps(
+        {
+            "temp_C": cc["temp_C"],
+            "humidity": cc["humidity"],
+            "pressure": cc["pressure"],
+            "visibility": cc["visibility"],
+            "weatherCode": cc["weatherCode"],
+            "feelsLikeC": cc["FeelsLikeC"],
+            "windSpeedKmph": cc["windspeedKmph"],
+            "windDir16Point": cc["winddir16Point"],
+            "cloudcover": cc["cloudcover"],
+            "uvIndex": cc["uvIndex"],
+            "condition": cc["weatherDesc"][0]["value"],
+            "precipMM": cc["precipMM"],
+        }
+    )
+
+    await redis_cache.set(f"weather:{farm_id}", data, ttl=CACHE_TTL)
+    return data

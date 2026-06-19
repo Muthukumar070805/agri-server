@@ -49,12 +49,14 @@ server.err
 server.log
 server_err.log
 
-# Test files
+# Test files (stubs only, not current test suite)
 run_test.py
 test_server.py
 test_socket.py
 test_ws.py
-tests/
+
+# Graphify cache
+graphify-out/
 
 # Opencode config
 skills-lock.json
@@ -63,6 +65,10 @@ opencode.jsonc
 
 # Temp files
 session-ses_281d.md
+
+# Caller files (AI assistant)
+thread.md
+tools/
 
 # Untracked files/folders to ignore
 CLAUDE.md

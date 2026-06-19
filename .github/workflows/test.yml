@@ -1,0 +1,83 @@
+name: Test & Coverage
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check app/ tests/
+
+      - name: Unit tests
+        run: uv run pytest tests/test_unit/ -v --timeout=60 -x
+
+      - name: Integration tests
+        run: uv run pytest tests/test_integration/ -v --timeout=120 -x
+
+      - name: Contract tests
+        run: uv run pytest tests/test_contracts.py -v
+
+      - name: Security tests
+        run: uv run pytest tests/test_security.py -v
+
+      - name: Edge case fuzz tests
+        run: uv run pytest tests/test_edge_cases.py -v --hypothesis-show-statistics --timeout=120
+
+      - name: Full test suite (all)
+        run: uv run pytest tests/ -v --timeout=120 --junitxml=report.xml
+
+      - name: Coverage report
+        run: |
+          uv run pytest --cov=app --cov-report=xml --cov-report=term tests/
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Enforce coverage thresholds
+        run: |
+          uv run python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.find('.//coverage').get('line-rate', 0))
+          coverage = line_rate * 100
+          print(f'Total line coverage: {coverage:.1f}%')
+          assert coverage >= 70, f'FAIL: {coverage:.1f}% < 70% target'
+          print('Coverage threshold met: 70%')
+          "
