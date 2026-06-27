@@ -79,6 +79,16 @@ agents/
 scripts/
 rag_plan_claude.md
 
+# Coverage artifacts
+.coverage
+*.cover
+
+# Agent skill cache
+.superpowers/
+
+# Auto-generated docs
+docs/
+
 # Temp test files
 api_test_report.md
 test_classify.py
