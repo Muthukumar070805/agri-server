@@ -3,7 +3,7 @@ name = "agri-server"
 version = "0.1.0"
 description = "AI voice/text assistant for farmer helpline"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "sarvamai>=0.1.27",
     "fastapi>=0.135.3",
@@ -27,6 +27,8 @@ dependencies = [
     "pyaudio>=0.2.14",
     "pipecat-ai>=0.0.108",
     "python-socketio[asyncio]>=5.11.0",
+    "nest-asyncio>=1.6.0",
+    "earthengine-api>=1.2.0",
 ]
 
 [tool.setuptools]
