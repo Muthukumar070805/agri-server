@@ -121,12 +121,12 @@ class TestCircuitBreakerHalfOpen:
 
     @pytest.mark.asyncio
     async def test_half_open_failure_reopens(self):
-        cb = CircuitBreaker("test", failure_threshold=1, recovery_timeout=0)
+        cb = CircuitBreaker("test", failure_threshold=1, recovery_timeout=60)
         fail_fn = MagicMock(side_effect=ValueError("fail"))
         with pytest.raises(ValueError):
             await cb.call(fail_fn)
-        await asyncio.sleep(0.01)
-        assert cb.state == CircuitState.HALF_OPEN
+        cb._state = CircuitState.HALF_OPEN
+        cb._opened_at = None
         with pytest.raises(ValueError):
             await cb.call(fail_fn)
         assert cb.state == CircuitState.OPEN

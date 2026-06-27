@@ -1,7 +1,14 @@
 import pytest
 import asyncio
+import sys
+from unittest.mock import MagicMock
 
 pytest_plugins = []
+
+# Mock ee (Google Earth Engine) globally — required by app/services/gee/data.py
+# but not installed in dev/test env
+if "ee" not in sys.modules:
+    sys.modules["ee"] = MagicMock()
 
 
 @pytest.fixture(scope="session")

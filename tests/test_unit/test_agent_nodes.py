@@ -95,6 +95,9 @@ class TestDirectNode:
         from app.core.config import get_settings
 
         get_settings.cache_clear()
+        import app.models.reasoning
+
+        app.models.reasoning._reasoning_llm = None
         from app.agent.nodes import direct_node
 
         state = make_state(
@@ -126,6 +129,9 @@ class TestDirectNode:
         from app.core.config import get_settings
 
         get_settings.cache_clear()
+        import app.models.reasoning
+
+        app.models.reasoning._reasoning_llm = None
         from app.agent.nodes import direct_node
 
         tokens = []
@@ -160,6 +166,9 @@ class TestDirectNode:
         from app.core.config import get_settings
 
         get_settings.cache_clear()
+        import app.models.reasoning
+
+        app.models.reasoning._reasoning_llm = None
         from app.agent.nodes import direct_node
 
         state = make_state(query="hello")
