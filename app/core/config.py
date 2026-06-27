@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     weather_location: str = "Avadi"
 
+    gee_project: str = "ringed-hearth-500008-j4"
+    gee_latitude: float = 13.1143
+    gee_longitude: float = 80.1098
+
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 

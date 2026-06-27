@@ -78,33 +78,39 @@ class OllamaLLM(BaseLLM):
             raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s")
 
     def generate(self, prompt: str, system: Optional[str] = None) -> str:
-        return self._llm.invoke(
-            [SystemMessage(content=system), HumanMessage(content=prompt)]
-        ).content
+        messages = []
+        if system:
+            messages.append(SystemMessage(content=system))
+        messages.append(HumanMessage(content=prompt))
+        return self._llm.invoke(messages).content
 
     async def agenerate(self, prompt: str, system: Optional[str] = None) -> str:
         timeout = _get_timeout()
+        messages = []
+        if system:
+            messages.append(SystemMessage(content=system))
+        messages.append(HumanMessage(content=prompt))
         try:
             async with asyncio.timeout(timeout):
-                return (
-                    await self._llm.ainvoke(
-                        [SystemMessage(content=system), HumanMessage(content=prompt)]
-                    )
-                ).content
+                return (await self._llm.ainvoke(messages)).content
         except asyncio.TimeoutError:
             raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s")
 
     def stream(self, prompt: str, system: Optional[str] = None):
-        for chunk in self._llm.stream(
-            [SystemMessage(content=system), HumanMessage(content=prompt)]
-        ):
+        messages = []
+        if system:
+            messages.append(SystemMessage(content=system))
+        messages.append(HumanMessage(content=prompt))
+        for chunk in self._llm.stream(messages):
             if chunk.content:
                 yield chunk.content
 
     async def astream(self, prompt: str, system: Optional[str] = None):
-        async for chunk in self._llm.astream(
-            [SystemMessage(content=system), HumanMessage(content=prompt)]
-        ):
+        messages = []
+        if system:
+            messages.append(SystemMessage(content=system))
+        messages.append(HumanMessage(content=prompt))
+        async for chunk in self._llm.astream(messages):
             if chunk.content:
                 yield chunk.content
 

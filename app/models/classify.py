@@ -1,8 +1,8 @@
-from typing import Literal
+from typing import Literal, Optional
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.models.provider import ProviderSelector
-from app.resilience.circuit_breaker import get_circuit, CircuitOpenError
+from app.resilience.circuit_breaker import get_circuit
 
 CROPS = [
     "all",
@@ -62,6 +62,60 @@ Also extract metadata filters from the query if scheme-related:
     {{"query_type": "tool" | "scheme" | "direct", "filters": {{"type": "..." | null}}}}"""
 
 
+def _fast_classify(query: str) -> Optional[tuple[Literal["tool", "scheme", "direct"], dict]]:
+    content_lower = query.lower().strip()
+
+    if any(
+        content_lower.startswith(p) or content_lower == p
+        for p in ["hi", "hello", "hey", "thanks", "thank you", "ok", "okay", "bye", "good", "yes", "no"]
+    ) or any(
+        p in content_lower for p in ["thank", "welcome", "ok,", "ok ", "alright"]
+    ):
+        return "direct", {}
+
+    if any(
+        p in content_lower
+        for p in [
+            "weather", "temperature", "humidity", "pressure", "wind",
+            "rain", "soil", "moisture", "ph", "nitrogen", "phosphorus",
+            "potassium", "satellite", "ndvi", "ndwi", "crop health",
+            "crop status", "iot", "sensor",
+        ]
+    ):
+        crop_match = None
+        for crop in CROPS:
+            if crop in content_lower and crop != "all":
+                crop_match = crop
+                break
+        return "tool", {"type": crop_match}
+
+    if any(
+        p in content_lower
+        for p in [
+            "subsidy", "loan", "scheme", "insurance", "grant",
+            "incentive", "pm-kisan", "pm kisan", "government",
+            "financial", "pension", "benefit", "assistance",
+            "award", "crop insurance", "credit",
+        ]
+    ):
+        scheme_match = None
+        for st in SCHEME_TYPES:
+            label = st.replace("_", " ")
+            if label in content_lower or st in content_lower:
+                scheme_match = st
+                break
+        if not scheme_match:
+            words = set(content_lower.split())
+            for st in SCHEME_TYPES:
+                parts = set(st.split("_"))
+                if parts & words:
+                    scheme_match = st
+                    break
+        return "scheme", {"type": scheme_match}
+
+    return None
+
+
 def _fallback_classify(query: str) -> tuple[Literal["tool", "scheme", "direct"], dict]:
     content_lower = query.lower()
     if any(
@@ -100,6 +154,10 @@ def _fallback_classify(query: str) -> tuple[Literal["tool", "scheme", "direct"],
 async def classify_query(
     query: str,
 ) -> tuple[Literal["tool", "scheme", "direct"], dict]:
+    fast_result = _fast_classify(query)
+    if fast_result is not None:
+        return fast_result
+
     selector = ProviderSelector()
     llm = selector.get_chat_llm(
         model=selector.resolve_model("classify"), temperature=0.1
@@ -111,7 +169,7 @@ async def classify_query(
             llm.ainvoke,
             [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=query)],
         )
-    except CircuitOpenError:
+    except Exception:
         return _fallback_classify(query)
 
     content = response.content.strip()

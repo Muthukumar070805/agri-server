@@ -35,9 +35,18 @@ class ReasoningLLM:
         cache_key = f"{system or ''}:{prompt}"
         cached = await llm_cache.get(cache_key)
         if cached:
-            for char in cached:
-                yield char
+            yield cached
             return
 
         async for chunk in self._llm.astream(prompt=prompt, system=system):
             yield chunk
+
+
+_reasoning_llm: Optional[ReasoningLLM] = None
+
+
+def get_reasoning_llm() -> ReasoningLLM:
+    global _reasoning_llm
+    if _reasoning_llm is None:
+        _reasoning_llm = ReasoningLLM()
+    return _reasoning_llm

@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import asyncio
 
@@ -13,8 +13,8 @@ logger = get_logger(__name__)
 class SessionData:
     def __init__(self, session_id: str):
         self.session_id = session_id
-        self.created_at = datetime.utcnow()
-        self.last_activity = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
+        self.last_activity = datetime.now(timezone.utc)
         self.messages: list[dict] = []
         self.metadata: dict = {}
 
@@ -23,13 +23,13 @@ class SessionData:
             {
                 "role": role,
                 "content": content,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
-        self.last_activity = datetime.utcnow()
+        self.last_activity = datetime.now(timezone.utc)
 
     def is_expired(self, ttl_minutes: int = 30) -> bool:
-        return datetime.utcnow() - self.last_activity > timedelta(minutes=ttl_minutes)
+        return datetime.now(timezone.utc) - self.last_activity > timedelta(minutes=ttl_minutes)
 
     def to_dict(self) -> dict:
         return {
@@ -44,10 +44,10 @@ class SessionData:
         session = cls(session_id)
         session.messages = data.get("messages", [])
         session.created_at = datetime.fromisoformat(
-            data.get("created_at", datetime.utcnow().isoformat())
+            data.get("created_at", datetime.now(timezone.utc).isoformat())
         )
         session.last_activity = datetime.fromisoformat(
-            data.get("last_activity", datetime.utcnow().isoformat())
+            data.get("last_activity", datetime.now(timezone.utc).isoformat())
         )
         session.metadata = data.get("metadata", {})
         return session
@@ -182,7 +182,7 @@ class SessionManager:
             session = self._memory_sessions[session_id]
             if session.is_expired():
                 session.messages = []
-                session.last_activity = datetime.utcnow()
+                session.last_activity = datetime.now(timezone.utc)
                 logger.info(f"Reset expired session (memory): {session_id}")
         return self._memory_sessions[session_id]
 

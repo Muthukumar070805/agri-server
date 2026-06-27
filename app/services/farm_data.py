@@ -5,6 +5,7 @@ from app.core.logger import get_logger
 logger = get_logger(__name__)
 
 CACHE_TTL = 3600
+CACHE_TTL_SAT = 1800
 
 MOCK_SOIL = {
     "moisture": 45.2,
@@ -16,11 +17,11 @@ MOCK_SOIL = {
 }
 
 MOCK_SATELLITE = {
-    "ndvi": 0.72,
-    "ndwi": 0.15,
-    "crop_health": "good",
-    "last_scan": "2026-06-04",
-    "area_acres": 2.5,
+    "wind": {"speed_m_s": None, "direction_deg": None},
+    "rain": {"precipitation_mm_hr": None},
+    "ndvi": {"value": None, "source": "Sentinel-2"},
+    "sar": {"vv_db": None, "vh_db": None},
+    "temperature": {"temp_2m_c": None},
 }
 
 
@@ -40,7 +41,13 @@ async def fetch_satellite(farm_id: str = "default") -> str:
     if cached:
         return cached
 
-    data = json.dumps(MOCK_SATELLITE)
-    await redis_cache.set(f"satellite:{farm_id}", data, ttl=CACHE_TTL)
-    logger.info(f"Seeded mock satellite data for farm: {farm_id}")
+    from app.services.gee import fetch_satellite as gee_fetch
+
+    try:
+        data = await gee_fetch(farm_id)
+    except Exception as e:
+        logger.error(f"GEE fetch failed, using mock fallback: {e}")
+        data = json.dumps(MOCK_SATELLITE)
+
+    await redis_cache.set(f"satellite:{farm_id}", data, ttl=CACHE_TTL_SAT)
     return data

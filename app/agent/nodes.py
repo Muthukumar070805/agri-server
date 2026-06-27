@@ -1,27 +1,99 @@
-from typing import Optional
-from app.agent.state import AgentState
-from app.models.classify import classify_query
-from langgraph.prebuilt import ToolNode
+import asyncio
 import json
 
-_tool_node: Optional[ToolNode] = None
+from app.agent.state import AgentState
+from app.core.logger import get_logger
+from app.models.classify import classify_query
 
 
 async def classify(state: AgentState) -> AgentState:
+    import asyncio
+
+    from app.agent.tools import get_farm_data
+    from app.services.rag import aquery_schemes
+    from app.models.classify import _fast_classify
+
     query = state["query"]
-    query_type, filters = await classify_query(query)
-    state["query_type"] = query_type
-    state["filters"] = filters
+    callback = state.get("stream_callback")
+
+    if callback:
+        await callback("_ack_")
+
+    fast_result = _fast_classify(query)
+
+    if fast_result is not None:
+        predicted_type, _ = fast_result
+
+        if predicted_type == "tool":
+            llm_task = asyncio.create_task(classify_query(query))
+            data_task = asyncio.create_task(
+                get_farm_data(farm_id=state.get("farm_id", "default"))
+            )
+
+            query_type, filters = await llm_task
+            state["query_type"] = query_type
+            state["filters"] = filters
+
+            if query_type == "tool":
+                state["tool_data"] = json.loads(await data_task)
+            else:
+                data_task.cancel()
+                state["tool_data"] = {}
+
+        elif predicted_type == "scheme":
+            llm_task = asyncio.create_task(classify_query(query))
+            rag_task = asyncio.create_task(aquery_schemes(query=query))
+
+            query_type, filters = await llm_task
+            state["query_type"] = query_type
+            state["filters"] = filters
+
+            if query_type == "scheme":
+                state["scheme_data"] = await rag_task
+            else:
+                rag_task.cancel()
+                state["scheme_data"] = {}
+        else:
+            query_type, filters = await classify_query(query)
+            state["query_type"] = query_type
+            state["filters"] = filters
+    else:
+        query_type, filters = await classify_query(query)
+        state["query_type"] = query_type
+        state["filters"] = filters
+
     return state
 
 
 async def rag_node(state: AgentState) -> AgentState:
-    from app.services.rag import aquery_schemes
+    import hashlib
+    import json
 
-    result = await aquery_schemes(
-        query=state["query"], scheme_type=state.get("filters", {}).get("type")
-    )
+    from app.services.rag import aquery_schemes
+    from app.services.redis_cache import redis_cache
+    from app.core.config import get_settings
+
+    if state.get("scheme_data"):
+        return state
+
+    settings = get_settings()
+    farm_id = state.get("farm_id", "default")
+    query = state["query"]
+    scheme_type = state.get("filters", {}).get("type")
+
+    if settings.llm_cache_enabled:
+        cache_key = f"node_rag:{farm_id}:{hashlib.sha256(query.encode()).hexdigest()[:16]}"
+        cached = await redis_cache.get(cache_key)
+        if cached:
+            state["scheme_data"] = json.loads(cached)
+            return state
+
+    result = await aquery_schemes(query=query, scheme_type=scheme_type)
     state["scheme_data"] = result
+
+    if settings.llm_cache_enabled:
+        await redis_cache.set(cache_key, json.dumps(result), ttl=3600)
+
     return state
 
 
@@ -29,23 +101,31 @@ async def tool_node(state: AgentState) -> AgentState:
     from app.agent.tools import get_farm_data
 
     if state["query_type"] == "tool":
-        result = await get_farm_data(farm_id="default")
-        try:
-            state["tool_data"] = json.loads(result)
-        except json.JSONDecodeError:
-            state["tool_data"] = {}
+        if not state.get("tool_data"):
+            farm_id = state.get("farm_id", "default")
+            result = await get_farm_data(farm_id=farm_id)
+            try:
+                state["tool_data"] = json.loads(result)
+            except json.JSONDecodeError as e:
+                logger = get_logger(__name__)
+                logger.warning(f"Failed to parse tool_data JSON: {e}")
+                state["tool_data"] = {}
     else:
         state["tool_data"] = {}
     return state
 
 
 async def direct_node(state: AgentState) -> AgentState:
-    from app.models.reasoning import ReasoningLLM
+    from app.models.reasoning import get_reasoning_llm
 
     query = state["query"]
     tool_data = state.get("tool_data", {})
     scheme_data = state.get("scheme_data", {})
     context = state.get("context", [])
+    qtype = state.get("query_type", "direct")
+
+    logger = get_logger(__name__)
+    logger.info(f"direct_node: query_type={qtype}, has_context={len(context)>0}, streaming={state.get('stream_callback') is not None}")
 
     tool_info = ""
     if tool_data:
@@ -62,7 +142,7 @@ async def direct_node(state: AgentState) -> AgentState:
     full_prompt = f"User Query: {query}{tool_info}{scheme_info}{context_str}"
     system_msg = "You are a helpful AI assistant for a farmer helpline. Use the provided farm data and scheme information to answer user questions accurately. Be concise for voice output."
 
-    llm = ReasoningLLM()
+    llm = get_reasoning_llm()
     full_response = ""
     callback = state.get("stream_callback")
 
@@ -71,9 +151,17 @@ async def direct_node(state: AgentState) -> AgentState:
             full_response += token
             await callback(token)
     else:
-        full_response = llm.generate(full_prompt, system=system_msg)
+        loop = asyncio.get_running_loop()
+        full_response = await loop.run_in_executor(
+            None, llm.generate, full_prompt, system_msg
+        )
 
     state["response"] = full_response
+
+    context.append({"role": "user", "content": query})
+    context.append({"role": "assistant", "content": full_response})
+    state["context"] = context[-10:]
+
     return state
 
 

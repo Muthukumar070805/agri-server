@@ -10,4 +10,5 @@ class AgentState(TypedDict):
     context: list
     response: str
     session_id: str
+    farm_id: str
     stream_callback: Optional[Callable]

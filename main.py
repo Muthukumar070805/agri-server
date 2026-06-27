@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uvicorn
 import os
 import sys
@@ -33,7 +33,7 @@ _rate_limit_store: dict[str, list[datetime]] = defaultdict(list)
 
 
 def _clean_old_entries(client_id: str):
-    cutoff = datetime.utcnow() - timedelta(seconds=RATE_LIMIT_WINDOW)
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=RATE_LIMIT_WINDOW)
     _rate_limit_store[client_id] = [
         ts for ts in _rate_limit_store[client_id] if ts > cutoff
     ]
@@ -45,7 +45,7 @@ def _check_rate_limit(client_id: str) -> bool:
 
 
 def _record_request(client_id: str):
-    _rate_limit_store[client_id].append(datetime.utcnow())
+    _rate_limit_store[client_id].append(datetime.now(timezone.utc))
 
 
 @asynccontextmanager
@@ -67,6 +67,13 @@ async def lifespan(app: FastAPI):
 
     thread = threading.Thread(target=_preload, daemon=True)
     thread.start()
+
+    from app.models.reasoning import get_reasoning_llm
+    try:
+        get_reasoning_llm()
+        logger.info("ReasoningLLM pre-loaded (warm)")
+    except Exception as e:
+        logger.warning(f"Could not pre-warm ReasoningLLM: {e}. Will lazy-init on first request.")
 
     session_manager.start_cleanup_task()
     logger.info("Session cleanup task started")
@@ -200,4 +207,4 @@ app.include_router(router)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

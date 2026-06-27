@@ -4,7 +4,10 @@ from app.agent.nodes import classify, rag_node, tool_node, direct_node, handoff_
 
 
 def route_query(state: AgentState) -> str:
-    return state["query_type"]
+    qtype = state.get("query_type")
+    if qtype in ("tool", "scheme", "direct", "handoff"):
+        return qtype
+    return "direct"
 
 
 def compile_graph():
@@ -25,6 +28,7 @@ def compile_graph():
             "tool": "tool",
             "scheme": "rag",
             "direct": "direct",
+            "handoff": "handoff",
         },
     )
 
