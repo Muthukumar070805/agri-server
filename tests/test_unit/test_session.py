@@ -1,5 +1,7 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timedelta, timezone
+
 from app.services.session import SessionData, SessionManager
 
 
@@ -22,13 +24,13 @@ def test_session_add_message():
 
 def test_session_expiry():
     session = SessionData("test-123")
-    session.last_activity = datetime.now(timezone.utc) - timedelta(minutes=31)
+    session.last_activity = datetime.now(UTC) - timedelta(minutes=31)
     assert session.is_expired(ttl_minutes=30) is True
 
 
 def test_session_not_expired():
     session = SessionData("test-123")
-    session.last_activity = datetime.now(timezone.utc)
+    session.last_activity = datetime.now(UTC)
     assert session.is_expired(ttl_minutes=30) is False
 
 
@@ -54,6 +56,6 @@ async def test_session_manager_clears_expired():
     manager = SessionManager()
     session = await manager.get_or_create("expired")
     session.add_message("user", "test")
-    session.last_activity = datetime.now(timezone.utc) - timedelta(minutes=31)
+    session.last_activity = datetime.now(UTC) - timedelta(minutes=31)
     fresh = await manager.get_or_create("expired")
     assert len(fresh.messages) == 0

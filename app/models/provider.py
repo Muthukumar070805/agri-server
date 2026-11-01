@@ -1,21 +1,24 @@
-from typing import Optional
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import asyncio
-from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
+
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
-from app.models.ollama import get_embeddings as get_ollama_embeddings
 from app.models.ollama import get_chat_llm as get_ollama_llm
+from app.models.ollama import get_embeddings as get_ollama_embeddings
 
 logger = get_logger(__name__)
 
 
 class LLMTimeoutError(Exception):
-    """Raised when LLM call exceeds timeout."""
+    """Raised when LLM call exceeds timeout or stream stalls."""
 
-    pass
+
+class LLMStreamStalledError(LLMTimeoutError):
+    """Raised when a streaming LLM response stalls between chunks."""
 
 
 def _get_timeout() -> int:
@@ -25,7 +28,7 @@ def _get_timeout() -> int:
 @dataclass
 class LLMResponse:
     content: str
-    raw: Optional[object] = None
+    raw: object | None = None
 
 
 class BaseLLM(ABC):
@@ -34,34 +37,32 @@ class BaseLLM(ABC):
     @abstractmethod
     def invoke(self, messages: list):
         """Invoke LLM with LangChain message list. Returns LangChain response object."""
-        pass
 
     @abstractmethod
     async def ainvoke(self, messages: list):
         """Async invoke LLM with LangChain message list."""
+
+    @abstractmethod
+    def generate(self, prompt: str, system: str | None = None) -> str:
         pass
 
     @abstractmethod
-    def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def agenerate(self, prompt: str, system: str | None = None) -> str:
         pass
 
     @abstractmethod
-    async def agenerate(self, prompt: str, system: Optional[str] = None) -> str:
+    def stream(self, prompt: str, system: str | None = None):
         pass
 
     @abstractmethod
-    def stream(self, prompt: str, system: Optional[str] = None):
-        pass
-
-    @abstractmethod
-    async def astream(self, prompt: str, system: Optional[str] = None):
+    async def astream(self, prompt: str, system: str | None = None):
         pass
 
 
 class OllamaLLM(BaseLLM):
     """Ollama LLM wrapper."""
 
-    def __init__(self, model: Optional[str] = None, temperature: float = 0.1):
+    def __init__(self, model: str | None = None, temperature: float = 0.1):
         settings = get_settings()
         self._model = model or settings.ollama_flash_model
         self._llm = get_ollama_llm(model=self._model, temperature=temperature)
@@ -74,17 +75,17 @@ class OllamaLLM(BaseLLM):
         try:
             async with asyncio.timeout(timeout):
                 return await self._llm.ainvoke(messages)
-        except asyncio.TimeoutError:
-            raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s")
+        except TimeoutError as e:
+            raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s") from e
 
-    def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system: str | None = None) -> str:
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
         return self._llm.invoke(messages).content
 
-    async def agenerate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def agenerate(self, prompt: str, system: str | None = None) -> str:
         timeout = _get_timeout()
         messages = []
         if system:
@@ -93,10 +94,10 @@ class OllamaLLM(BaseLLM):
         try:
             async with asyncio.timeout(timeout):
                 return (await self._llm.ainvoke(messages)).content
-        except asyncio.TimeoutError:
-            raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s")
+        except TimeoutError as e:
+            raise LLMTimeoutError(f"Ollama LLM call timed out after {timeout}s") from e
 
-    def stream(self, prompt: str, system: Optional[str] = None):
+    def stream(self, prompt: str, system: str | None = None):
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
@@ -105,12 +106,23 @@ class OllamaLLM(BaseLLM):
             if chunk.content:
                 yield chunk.content
 
-    async def astream(self, prompt: str, system: Optional[str] = None):
+    async def astream(self, prompt: str, system: str | None = None):
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
-        async for chunk in self._llm.astream(messages):
+        timeout = _get_timeout()
+        it = self._llm.astream(messages).__aiter__()
+        while True:
+            try:
+                async with asyncio.timeout(timeout):
+                    chunk = await it.__anext__()
+            except StopAsyncIteration:
+                break
+            except TimeoutError as e:
+                raise LLMStreamStalledError(
+                    f"Ollama LLM stream stalled for over {timeout}s"
+                ) from e
             if chunk.content:
                 yield chunk.content
 
@@ -118,7 +130,7 @@ class OllamaLLM(BaseLLM):
 class MistralLLM(BaseLLM):
     """Mistral LLM wrapper."""
 
-    def __init__(self, model: Optional[str] = None, temperature: float = 0.1):
+    def __init__(self, model: str | None = None, temperature: float = 0.1):
         settings = get_settings()
         self._model = model or settings.mistral_model
         self._llm = ChatMistralAI(
@@ -135,17 +147,17 @@ class MistralLLM(BaseLLM):
         try:
             async with asyncio.timeout(timeout):
                 return await self._llm.ainvoke(messages)
-        except asyncio.TimeoutError:
-            raise LLMTimeoutError(f"Mistral LLM call timed out after {timeout}s")
+        except TimeoutError as e:
+            raise LLMTimeoutError(f"Mistral LLM call timed out after {timeout}s") from e
 
-    def generate(self, prompt: str, system: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system: str | None = None) -> str:
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
         return self._llm.invoke(messages).content
 
-    async def agenerate(self, prompt: str, system: Optional[str] = None) -> str:
+    async def agenerate(self, prompt: str, system: str | None = None) -> str:
         timeout = _get_timeout()
         messages = []
         if system:
@@ -154,10 +166,10 @@ class MistralLLM(BaseLLM):
         try:
             async with asyncio.timeout(timeout):
                 return (await self._llm.ainvoke(messages)).content
-        except asyncio.TimeoutError:
-            raise LLMTimeoutError(f"Mistral LLM call timed out after {timeout}s")
+        except TimeoutError as e:
+            raise LLMTimeoutError(f"Mistral LLM call timed out after {timeout}s") from e
 
-    def stream(self, prompt: str, system: Optional[str] = None):
+    def stream(self, prompt: str, system: str | None = None):
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
@@ -166,12 +178,23 @@ class MistralLLM(BaseLLM):
             if chunk.content:
                 yield chunk.content
 
-    async def astream(self, prompt: str, system: Optional[str] = None):
+    async def astream(self, prompt: str, system: str | None = None):
         messages = []
         if system:
             messages.append(SystemMessage(content=system))
         messages.append(HumanMessage(content=prompt))
-        async for chunk in self._llm.astream(messages):
+        timeout = _get_timeout()
+        it = self._llm.astream(messages).__aiter__()
+        while True:
+            try:
+                async with asyncio.timeout(timeout):
+                    chunk = await it.__anext__()
+            except StopAsyncIteration:
+                break
+            except TimeoutError as e:
+                raise LLMStreamStalledError(
+                    f"Mistral LLM stream stalled for over {timeout}s"
+                ) from e
             if chunk.content:
                 yield chunk.content
 
@@ -183,7 +206,7 @@ class ProviderSelector:
         self.provider = get_settings().provider
 
     def get_chat_llm(
-        self, model: Optional[str] = None, temperature: float = 0.1
+        self, model: str | None = None, temperature: float = 0.1
     ) -> BaseLLM:
         """Get LLM instance based on provider setting."""
         if self.provider == "mistral":
@@ -204,7 +227,7 @@ class ProviderSelector:
                         model="mistral-embed",
                         api_key=settings.mistral_api_key,
                     )
-                except Exception as e2:
+                except Exception as e2:  # noqa: BLE001 - re-raised below
                     logger.error(f"Mistral embeddings also failed: {e2}")
             raise
 

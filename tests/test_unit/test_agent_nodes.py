@@ -1,6 +1,8 @@
-import pytest
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from tests.factories import make_state, mock_provider_selector
 
 

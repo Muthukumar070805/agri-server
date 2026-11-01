@@ -1,4 +1,4 @@
-from app.core.config import validate_required_keys, get_settings
+from app.core.config import get_settings, validate_required_keys
 
 
 class TestValidateRequiredKeys:

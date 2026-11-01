@@ -1,6 +1,7 @@
-import pytest
 import json
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -52,8 +53,10 @@ async def test_classify_prefetches_tool_data():
         "stream_callback": None,
     }
 
-    with patch("app.agent.nodes.classify_query") as mock_cq, \
-         patch("app.agent.tools.get_farm_data") as mock_gfd:
+    with (
+        patch("app.agent.nodes.classify_query") as mock_cq,
+        patch("app.agent.tools.get_farm_data") as mock_gfd,
+    ):
         mock_cq.return_value = ("tool", {"type": None})
         mock_gfd.return_value = '{"weather": {"temp_C": 30}}'
         result = await classify(state)
@@ -79,8 +82,10 @@ async def test_classify_prefetches_scheme_data():
         "stream_callback": None,
     }
 
-    with patch("app.agent.nodes.classify_query") as mock_cq, \
-         patch("app.services.rag.aquery_schemes") as mock_raq:
+    with (
+        patch("app.agent.nodes.classify_query") as mock_cq,
+        patch("app.services.rag.aquery_schemes") as mock_raq,
+    ):
         mock_cq.return_value = ("scheme", {"type": "credit_loan"})
         mock_raq.return_value = {"schemes": [{"content": "PM Kisan"}]}
         result = await classify(state)
@@ -129,9 +134,11 @@ async def test_classify_cancels_prefetch_on_disagreement():
         "stream_callback": None,
     }
 
-    with patch("app.models.classify._fast_classify") as mock_fast, \
-         patch("app.agent.nodes.classify_query") as mock_cq, \
-         patch("app.agent.tools.get_farm_data") as mock_gfd:
+    with (
+        patch("app.models.classify._fast_classify") as mock_fast,
+        patch("app.agent.nodes.classify_query") as mock_cq,
+        patch("app.agent.tools.get_farm_data") as mock_gfd,
+    ):
         mock_fast.return_value = ("tool", {"type": None})
         mock_cq.return_value = ("direct", {})
         mock_gfd.return_value = '{"weather": {"temp_C": 30}}'
@@ -211,8 +218,10 @@ async def test_rag_node_uses_cache_when_enabled():
         "stream_callback": None,
     }
 
-    with patch("app.services.redis_cache.redis_cache.get") as mock_get, \
-         patch("app.services.rag.aquery_schemes") as mock_raq:
+    with (
+        patch("app.services.redis_cache.redis_cache.get") as mock_get,
+        patch("app.services.rag.aquery_schemes") as mock_raq,
+    ):
         mock_get.return_value = json.dumps({"schemes": [{"content": "CACHED"}]})
         result = await rag_node(state)
 

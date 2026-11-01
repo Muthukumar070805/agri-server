@@ -1,6 +1,7 @@
-import pytest
 import json
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 patch.dict("sys.modules", {"ee": MagicMock()}).start()
 
@@ -42,6 +43,7 @@ class TestGeeData:
         }
 
         with patch("app.services.gee.data.get_or_cache") as mock_cache:
+
             async def side_effect(key, fetcher, ttl=1800):
                 return mock_payloads[key]
 
@@ -61,9 +63,14 @@ class TestGeeData:
 
         with patch("app.services.gee.data.ee") as mock_ee:
             mock_col = MagicMock()
-            mock_ee.ImageCollection.return_value.filterDate.return_value.filterBounds.return_value = mock_col
+            collection = mock_ee.ImageCollection.return_value.filterDate.return_value
+            collection.filterBounds.return_value = mock_col
             mock_col.size.return_value.getInfo.return_value = 1
-            mock_col.select.return_value.median.return_value.reduceRegion.return_value.get.return_value.getInfo.side_effect = [3.5, 180.0]
+            region = mock_col.select.return_value.median.return_value.reduceRegion
+            region.return_value.get.return_value.getInfo.side_effect = [
+                3.5,
+                180.0,
+            ]
 
             result = _fetch_wind(13.0, 80.0)
             data = json.loads(result)
@@ -76,7 +83,8 @@ class TestGeeData:
 
         with patch("app.services.gee.data.ee") as mock_ee:
             mock_col = MagicMock()
-            mock_ee.ImageCollection.return_value.filterDate.return_value.filterBounds.return_value.filter.return_value = mock_col
+            collection = mock_ee.ImageCollection.return_value.filterDate.return_value
+            collection.filterBounds.return_value.filter.return_value = mock_col
             mock_col.size.return_value.getInfo.return_value = 0
 
             result = _fetch_ndvi(13.0, 80.0)
@@ -90,7 +98,8 @@ class TestGeeData:
 
         with patch("app.services.gee.data.ee") as mock_ee:
             mock_col = MagicMock()
-            mock_ee.ImageCollection.return_value.filterDate.return_value.filterBounds.return_value.filter.return_value = mock_col
+            collection = mock_ee.ImageCollection.return_value.filterDate.return_value
+            collection.filterBounds.return_value.filter.return_value = mock_col
             mock_col.size.return_value.getInfo.return_value = 0
 
             result = _fetch_sar(13.0, 80.0)
@@ -104,9 +113,11 @@ class TestGeeData:
 
         with patch("app.services.gee.data.ee") as mock_ee:
             mock_col = MagicMock()
-            mock_ee.ImageCollection.return_value.filterDate.return_value.filterBounds.return_value = mock_col
+            collection = mock_ee.ImageCollection.return_value.filterDate.return_value
+            collection.filterBounds.return_value = mock_col
             mock_col.size.return_value.getInfo.return_value = 1
-            mock_col.select.return_value.median.return_value.reduceRegion.return_value.get.return_value.getInfo.return_value = 305.0
+            region = mock_col.select.return_value.median.return_value.reduceRegion
+            region.return_value.get.return_value.getInfo.return_value = 305.0
 
             result = _fetch_temp(13.0, 80.0)
             data = json.loads(result)

@@ -1,4 +1,4 @@
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 
 class TestWebSocketHandler:
@@ -17,12 +17,12 @@ class TestWebSocketHandler:
                 responses = []
                 while True:
                     data = ws.receive_json()
-                    if "done" in data and data["done"]:
+                    if data.get("done"):
                         responses.append(data)
                         break
                     responses.append(data)
                 assert any("Hello" in str(r) for r in responses)
-                done = [r for r in responses if "done" in r][0]
+                done = next(r for r in responses if "done" in r)
                 assert done["query_type"] == "direct"
 
     def test_websocket_invalid_json(self, client):
@@ -69,7 +69,7 @@ class TestWebSocketHandler:
                 ws.send_json({"message": "hello"})
                 while True:
                     data = ws.receive_json()
-                    if "done" in data and data["done"]:
+                    if data.get("done"):
                         assert "trouble" in data["response"].lower()
                         assert data["query_type"] == "unknown"
                         break

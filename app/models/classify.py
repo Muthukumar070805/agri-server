@@ -1,38 +1,19 @@
-from typing import Literal, Optional
 import json
-from langchain_core.messages import SystemMessage, HumanMessage
+from pathlib import Path
+from typing import Literal
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.models.provider import ProviderSelector
 from app.resilience.circuit_breaker import get_circuit
 
-CROPS = [
-    "all",
-    "coconut",
-    "groundnut",
-    "horticulture",
-    "millets",
-    "oilpalm",
-    "oilseeds",
-    "paddy",
-    "pulses",
-    "sugarcane",
-    "vegetables",
-]
-SCHEME_TYPES = [
-    "award_incentive",
-    "credit_loan",
-    "crop_insurance",
-    "crop_productivity",
-    "farm_mechanization",
-    "farmer_organization",
-    "input_subsidy",
-    "irrigation",
-    "organic_farming",
-    "pest_management",
-    "planting_material",
-    "seed_production",
-    "soil_health",
-    "training_extension",
-]
+_METADATA_PATH = Path(__file__).resolve().parents[2] / "metadata.json"
+
+with open(_METADATA_PATH, encoding="utf-8") as _f:
+    _METADATA = json.load(_f)
+
+CROPS = _METADATA["crops"]
+SCHEME_TYPES = _METADATA["types"]
 
 SYSTEM_PROMPT = f"""You are a query classifier for a farmer helpline.
 
@@ -59,27 +40,55 @@ Also extract metadata filters from the query if scheme-related:
     - Look for scheme types: {", ".join(SCHEME_TYPES)}
 
     Respond with ONLY a JSON object in this exact format:
-    {{"query_type": "tool" | "scheme" | "direct", "filters": {{"type": "..." | null}}}}"""
+    {{"query_type": "tool" | "scheme" | "direct",
+      "filters": {{"type": "..." | null}}}}"""
 
 
-def _fast_classify(query: str) -> Optional[tuple[Literal["tool", "scheme", "direct"], dict]]:
+def _fast_classify(
+    query: str,
+) -> tuple[Literal["tool", "scheme", "direct"], dict] | None:
     content_lower = query.lower().strip()
 
     if any(
         content_lower.startswith(p) or content_lower == p
-        for p in ["hi", "hello", "hey", "thanks", "thank you", "ok", "okay", "bye", "good", "yes", "no"]
-    ) or any(
-        p in content_lower for p in ["thank", "welcome", "ok,", "ok ", "alright"]
-    ):
+        for p in [
+            "hi",
+            "hello",
+            "hey",
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "bye",
+            "good",
+            "yes",
+            "no",
+        ]
+    ) or any(p in content_lower for p in ["thank", "welcome", "ok,", "ok ", "alright"]):
         return "direct", {}
 
     if any(
         p in content_lower
         for p in [
-            "weather", "temperature", "humidity", "pressure", "wind",
-            "rain", "soil", "moisture", "ph", "nitrogen", "phosphorus",
-            "potassium", "satellite", "ndvi", "ndwi", "crop health",
-            "crop status", "iot", "sensor",
+            "weather",
+            "temperature",
+            "humidity",
+            "pressure",
+            "wind",
+            "rain",
+            "soil",
+            "moisture",
+            "ph",
+            "nitrogen",
+            "phosphorus",
+            "potassium",
+            "satellite",
+            "ndvi",
+            "ndwi",
+            "crop health",
+            "crop status",
+            "iot",
+            "sensor",
         ]
     ):
         crop_match = None
@@ -92,10 +101,22 @@ def _fast_classify(query: str) -> Optional[tuple[Literal["tool", "scheme", "dire
     if any(
         p in content_lower
         for p in [
-            "subsidy", "loan", "scheme", "insurance", "grant",
-            "incentive", "pm-kisan", "pm kisan", "government",
-            "financial", "pension", "benefit", "assistance",
-            "award", "crop insurance", "credit",
+            "subsidy",
+            "loan",
+            "scheme",
+            "insurance",
+            "grant",
+            "incentive",
+            "pm-kisan",
+            "pm kisan",
+            "government",
+            "financial",
+            "pension",
+            "benefit",
+            "assistance",
+            "award",
+            "crop insurance",
+            "credit",
         ]
     ):
         scheme_match = None
@@ -111,6 +132,8 @@ def _fast_classify(query: str) -> Optional[tuple[Literal["tool", "scheme", "dire
                 if parts & words:
                     scheme_match = st
                     break
+        if scheme_match and scheme_match not in SCHEME_TYPES:
+            scheme_match = None
         return "scheme", {"type": scheme_match}
 
     return None
@@ -169,7 +192,7 @@ async def classify_query(
             llm.ainvoke,
             [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=query)],
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - rule-based fallback is the safety net
         return _fallback_classify(query)
 
     content = response.content.strip()

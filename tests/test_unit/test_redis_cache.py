@@ -1,5 +1,6 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
 
 
 class TestRedisCache:
@@ -43,7 +44,7 @@ class TestRedisCache:
 
         with patch.object(redis_cache, "get_client") as mock_get_client:
             mock_get_client.side_effect = ConnectionError("No Redis")
-            from app.resilience.circuit_breaker import get_circuit, CircuitState
+            from app.resilience.circuit_breaker import CircuitState, get_circuit
 
             cb = get_circuit("redis")
             cb._state = CircuitState.OPEN
@@ -56,7 +57,7 @@ class TestRedisCache:
 
         with patch.object(redis_cache, "get_client") as mock_get_client:
             mock_get_client.side_effect = ConnectionError("No Redis")
-            from app.resilience.circuit_breaker import get_circuit, CircuitState
+            from app.resilience.circuit_breaker import CircuitState, get_circuit
 
             cb = get_circuit("redis")
             cb._state = CircuitState.OPEN

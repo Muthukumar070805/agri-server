@@ -1,4 +1,5 @@
-﻿from typing import TypedDict, Literal, Callable, Optional
+from collections.abc import Callable
+from typing import Literal, TypedDict
 
 
 class AgentState(TypedDict):
@@ -11,4 +12,4 @@ class AgentState(TypedDict):
     response: str
     session_id: str
     farm_id: str
-    stream_callback: Optional[Callable]
+    stream_callback: Callable | None

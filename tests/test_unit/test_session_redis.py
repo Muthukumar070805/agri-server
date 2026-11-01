@@ -1,9 +1,11 @@
-import pytest
-import json
 import asyncio
+import json
 from unittest.mock import AsyncMock, patch
-from app.services.session import RedisSessionManager, SessionManager, SessionData
+
+import pytest
+
 from app.core.config import get_settings
+from app.services.session import RedisSessionManager, SessionData, SessionManager
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +27,6 @@ def mock_client():
 
 
 class TestRedisSessionManager:
-
     @pytest.fixture
     def manager(self, mock_client):
         with patch("app.services.session.redis.Redis") as m:
@@ -42,12 +43,20 @@ class TestRedisSessionManager:
 
     @pytest.mark.asyncio
     async def test_get_or_create_existing(self, manager, mock_client):
-        mock_client.get.return_value = json.dumps({
-            "messages": [{"role": "user", "content": "hi", "timestamp": "2024-01-01T00:00:00"}],
-            "created_at": "2024-01-01T00:00:00",
-            "last_activity": "2024-01-01T00:00:00",
-            "metadata": {"crop": "paddy"},
-        })
+        mock_client.get.return_value = json.dumps(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "hi",
+                        "timestamp": "2024-01-01T00:00:00",
+                    }
+                ],
+                "created_at": "2024-01-01T00:00:00",
+                "last_activity": "2024-01-01T00:00:00",
+                "metadata": {"crop": "paddy"},
+            }
+        )
         session = await manager.get_or_create("s2")
         assert session.session_id == "s2"
         assert len(session.messages) == 1
@@ -80,7 +89,6 @@ class TestRedisSessionManager:
 
 
 class TestSessionManagerWithRedis:
-
     @pytest.fixture
     def manager(self, mock_client):
         with patch("app.services.session.redis.Redis") as m:
@@ -147,7 +155,6 @@ class TestSessionManagerWithRedis:
 
 
 class TestSessionCleanupTask:
-
     @pytest.fixture
     def manager(self, mock_client):
         with patch("app.services.session.redis.Redis") as m:

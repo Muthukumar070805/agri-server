@@ -1,6 +1,7 @@
-import pytest
 import json
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -16,9 +17,11 @@ async def test_get_farm_data_handles_partial_failure():
     async def fail_sat(_):
         return "bad json"
 
-    with patch("app.agent.tools.fetch_weather", fail_weather), \
-         patch("app.agent.tools.fetch_soil", ok_soil), \
-         patch("app.agent.tools.fetch_satellite", fail_sat):
+    with (
+        patch("app.agent.tools.fetch_weather", fail_weather),
+        patch("app.agent.tools.fetch_soil", ok_soil),
+        patch("app.agent.tools.fetch_satellite", fail_sat),
+    ):
         result = await get_farm_data("test")
 
     data = json.loads(result)

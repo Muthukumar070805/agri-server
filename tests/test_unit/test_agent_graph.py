@@ -1,4 +1,4 @@
-from app.agent.graph import route_query, compile_graph, agent
+from app.agent.graph import agent, compile_graph, route_query
 
 
 class TestRouteQuery:
@@ -33,7 +33,7 @@ class TestCompileGraph:
     def test_graph_has_correct_node_structure(self):
         graph = compile_graph()
         nodes = graph.get_graph().nodes
-        node_names = [n for n in nodes.keys()]
+        node_names = list(nodes)
         assert "classify" in node_names
         assert "rag" in node_names
         assert "tool" in node_names

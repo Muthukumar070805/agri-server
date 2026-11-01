@@ -1,6 +1,7 @@
 import hashlib
-from typing import Optional
+
 import redis.asyncio as redis
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
 
@@ -12,7 +13,7 @@ class LLMCache:
 
     def __init__(self):
         self.settings = get_settings()
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
 
     async def _get_client(self) -> redis.Redis:
         if self._client is None:
@@ -29,7 +30,7 @@ class LLMCache:
     def _hash_query(self, query: str) -> str:
         return hashlib.sha256(query.encode()).hexdigest()[:16]
 
-    async def get(self, query: str) -> Optional[str]:
+    async def get(self, query: str) -> str | None:
         if not self.settings.llm_cache_enabled:
             return None
 
@@ -41,7 +42,7 @@ class LLMCache:
                 logger.debug(f"LLM cache hit for query: {query[:50]}...")
                 return cached
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.warning(f"LLM cache get error: {e}")
             return None
 
@@ -56,7 +57,7 @@ class LLMCache:
             await client.set(key, response, ex=ttl)
             logger.debug(f"LLM cache set for query: {query[:50]}...")
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.warning(f"LLM cache set error: {e}")
             return False
 
@@ -66,7 +67,7 @@ class LLMCache:
             key = f"llm_cache:{self._hash_query(query)}"
             await client.delete(key)
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.warning(f"LLM cache invalidate error: {e}")
             return False
 
@@ -80,7 +81,7 @@ class LLMCache:
                 await client.delete(*keys)
                 logger.info(f"Cleared {len(keys)} LLM cache entries")
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.warning(f"LLM cache clear error: {e}")
             return False
 

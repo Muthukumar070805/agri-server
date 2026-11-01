@@ -1,6 +1,6 @@
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     mistral_reasoning_model: str = "mistral-large-latest"
 
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_flash_model: str = "minimax-m2.7:cloud"
-    ollama_reasoning_model: str = "minimax-m2.7:cloud"
+    ollama_flash_model: str = "qwen2.5:0.5b"
+    ollama_reasoning_model: str = "gemma4:e2b"
     ollama_embed_model: str = "nomic-embed-text:latest"
 
     redis_host: str = "localhost"
@@ -52,10 +52,12 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
-    model_config = ConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", case_sensitive=False
+    )
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
 
@@ -79,16 +81,19 @@ def validate_required_keys() -> list[str]:
         if not key or any(p in key.lower() for p in placeholder_patterns):
             issues.append("MISTRAL_API_KEY")
 
-    if settings.pinecone_api_key:
-        if any(p in settings.pinecone_api_key.lower() for p in placeholder_patterns):
-            issues.append("PINECONE_API_KEY (placeholder detected)")
+    if settings.pinecone_api_key and any(
+        p in settings.pinecone_api_key.lower() for p in placeholder_patterns
+    ):
+        issues.append("PINECONE_API_KEY (placeholder detected)")
 
-    if settings.redis_password:
-        if any(p in settings.redis_password.lower() for p in placeholder_patterns):
-            issues.append("REDIS_PASSWORD (placeholder detected)")
+    if settings.redis_password and any(
+        p in settings.redis_password.lower() for p in placeholder_patterns
+    ):
+        issues.append("REDIS_PASSWORD (placeholder detected)")
 
-    if settings.sarvam_api_key:
-        if any(p in settings.sarvam_api_key.lower() for p in placeholder_patterns):
-            issues.append("SARVAM_API_KEY (placeholder detected)")
+    if settings.sarvam_api_key and any(
+        p in settings.sarvam_api_key.lower() for p in placeholder_patterns
+    ):
+        issues.append("SARVAM_API_KEY (placeholder detected)")
 
     return issues

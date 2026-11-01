@@ -1,6 +1,7 @@
 import json
-from app.services.redis_cache import redis_cache
+
 from app.core.logger import get_logger
+from app.services.redis_cache import redis_cache
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,7 @@ async def fetch_satellite(farm_id: str = "default") -> str:
 
     try:
         data = await gee_fetch(farm_id)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - mock fallback is the contract
         logger.error(f"GEE fetch failed, using mock fallback: {e}")
         data = json.dumps(MOCK_SATELLITE)
 

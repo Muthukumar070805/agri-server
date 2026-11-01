@@ -1,12 +1,49 @@
-from fastapi import WebSocket, WebSocketDisconnect
-import json
 import asyncio
+import contextlib
+import json
+
+from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agent.graph import agent
-from app.services.session import session_manager
 from app.core.logger import get_logger
+from app.services.session import session_manager
 
 logger = get_logger(__name__)
+
+
+async def _forward_token(token: str, queue: asyncio.Queue) -> None:
+    await queue.put(token)
+
+
+async def _run_agent(
+    query: str,
+    history: list[dict],
+    session_id: str,
+    queue: asyncio.Queue,
+) -> dict | None:
+    async def on_token(token: str) -> None:
+        await _forward_token(token, queue)
+
+    try:
+        result = await agent.ainvoke(
+            {
+                "query": query,
+                "query_type": "direct",
+                "filters": {},
+                "tool_data": {},
+                "scheme_data": {},
+                "context": history,
+                "response": "",
+                "session_id": session_id,
+                "stream_callback": on_token,
+            }
+        )
+        await queue.put(None)
+        return result
+    except Exception as e:  # noqa: BLE001 - surfaced to the client as a fallback
+        logger.error(f"Agent error: {e}")
+        await queue.put(None)
+        return None
 
 
 async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
@@ -41,32 +78,9 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
 
             queue: asyncio.Queue = asyncio.Queue()
 
-            async def on_token(token: str):
-                await queue.put(token)
-
-            async def run_agent():
-                try:
-                    result = await agent.ainvoke(
-                        {
-                            "query": message,
-                            "query_type": "direct",
-                            "filters": {},
-                            "tool_data": {},
-                            "scheme_data": {},
-                            "context": history,
-                            "response": "",
-                            "session_id": current_session_id,
-                            "stream_callback": on_token,
-                        }
-                    )
-                    await queue.put(None)
-                    return result
-                except Exception as e:
-                    logger.error(f"Agent error: {e}")
-                    await queue.put(None)
-                    return None
-
-            task = asyncio.create_task(run_agent())
+            task = asyncio.create_task(
+                _run_agent(message, history, current_session_id, queue)
+            )
 
             while True:
                 token = await queue.get()
@@ -84,16 +98,13 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
                 query_type = (
                     result.get("query_type", "unknown") if result else "unknown"
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - fallback text, never break the stream
                 response_text = "Sorry, I'm having trouble processing your request."
                 query_type = "unknown"
 
             session.add_message("assistant", response_text)
 
-            try:
-                asyncio.create_task(session_manager.save_session(session))
-            except Exception as e:
-                logger.debug(f"Session save error (non-blocking): {e}")
+            session_manager.save_in_background(session)
 
             schemes_data = (
                 result.get("scheme_data", {}).get("schemes", []) if result else []
@@ -113,9 +124,7 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: session_id={session_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - handler boundary, log and close
         logger.error(f"WebSocket error: {e}")
-        try:
+        with contextlib.suppress(Exception):
             await websocket.send_json({"error": str(e), "session_id": session_id})
-        except Exception:
-            pass

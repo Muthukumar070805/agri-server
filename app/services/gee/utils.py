@@ -1,14 +1,17 @@
 import asyncio
-from typing import Callable
-from app.services.redis_cache import redis_cache
+from collections.abc import Callable
+
 from app.core.logger import get_logger
+from app.services.redis_cache import redis_cache
 
 logger = get_logger(__name__)
 
 DEFAULT_TTL = 1800
 
 
-async def get_or_cache(key: str, fetcher: Callable[[], str], ttl: int = DEFAULT_TTL) -> str:
+async def get_or_cache(
+    key: str, fetcher: Callable[[], str], ttl: int = DEFAULT_TTL
+) -> str:
     cached = await redis_cache.get(key)
     if cached:
         logger.debug(f"GEE cache hit: {key}")

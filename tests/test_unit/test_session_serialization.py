@@ -1,5 +1,7 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timedelta, timezone
+
 from app.services.session import SessionData, SessionManager
 
 
@@ -25,7 +27,7 @@ class TestSessionDataSerialization:
                 {
                     "role": "user",
                     "content": "test",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             ],
         }
@@ -72,7 +74,7 @@ class TestSessionManagerEdgeCases:
     async def test_cleanup_expired_removes_old_sessions(self):
         mgr = SessionManager()
         session = await mgr.get_or_create("expired-session")
-        session.last_activity = datetime.now(timezone.utc) - timedelta(minutes=31)
+        session.last_activity = datetime.now(UTC) - timedelta(minutes=31)
         fresh = await mgr.get_or_create("fresh-session")
         mgr.cleanup_expired(ttl_minutes=30)
         assert mgr.get("expired-session") is None

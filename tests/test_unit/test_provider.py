@@ -1,6 +1,8 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from app.models.provider import ProviderSelector, LLMTimeoutError, _get_timeout
+
+from app.models.provider import LLMTimeoutError, ProviderSelector, _get_timeout
 from app.models.reasoning import ReasoningLLM
 
 
@@ -169,7 +171,7 @@ class TestReasoningLLM:
         get_settings.cache_clear()
         with patch("app.models.reasoning.llm_cache") as mock_cache:
             mock_cache.get = AsyncMock(return_value="cached response")
-            with patch("app.models.reasoning.ProviderSelector") as MockSel:  # noqa: F841
+            with patch("app.models.reasoning.ProviderSelector") as MockSel:
                 mock_llm = MagicMock()
                 mock_sel = MagicMock()
                 mock_sel.get_chat_llm.return_value = mock_llm

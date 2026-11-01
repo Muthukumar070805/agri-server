@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 
+from app.services.farm_data import fetch_satellite, fetch_soil
 from app.services.weather import fetch_weather
-from app.services.farm_data import fetch_soil, fetch_satellite
 
 logger = logging.getLogger(__name__)
 

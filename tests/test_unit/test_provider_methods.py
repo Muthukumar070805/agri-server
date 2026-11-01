@@ -1,13 +1,14 @@
-import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from langchain_core.messages import AIMessage
-from app.models.provider import OllamaLLM, MistralLLM, ProviderSelector, LLMTimeoutError
+
 from app.core.config import get_settings
+from app.models.provider import LLMTimeoutError, MistralLLM, OllamaLLM, ProviderSelector
 
 
 class TestOllamaLLM:
-
     @pytest.fixture
     def mock_llm(self):
         with patch("app.models.provider.get_ollama_llm") as m:
@@ -24,6 +25,7 @@ class TestOllamaLLM:
             async def _astream(*args, **kwargs):
                 yield chunk1
                 yield chunk2
+
             llm.astream = _astream
 
             m.return_value = llm
@@ -50,6 +52,7 @@ class TestOllamaLLM:
         async def slow(*args, **kwargs):
             await asyncio.sleep(3)
             return AIMessage(content="late")
+
         mock_llm.ainvoke = slow
 
         llm = OllamaLLM()
@@ -83,6 +86,7 @@ class TestOllamaLLM:
         async def slow(*args, **kwargs):
             await asyncio.sleep(3)
             return AIMessage(content="late")
+
         mock_llm.ainvoke = slow
 
         llm = OllamaLLM()
@@ -123,6 +127,7 @@ class TestOllamaLLM:
             yield empty
             yield good
             yield empty
+
         mock_llm.astream = filtered
 
         llm = OllamaLLM()
@@ -133,7 +138,6 @@ class TestOllamaLLM:
 
 
 class TestMistralLLM:
-
     @pytest.fixture
     def mock_llm(self):
         with patch("app.models.provider.ChatMistralAI") as m:
@@ -150,6 +154,7 @@ class TestMistralLLM:
             async def _astream(*args, **kwargs):
                 yield chunk1
                 yield chunk2
+
             llm.astream = _astream
 
             m.return_value = llm
@@ -176,6 +181,7 @@ class TestMistralLLM:
         async def slow(*args, **kwargs):
             await asyncio.sleep(3)
             return AIMessage(content="late")
+
         mock_llm.ainvoke = slow
 
         llm = MistralLLM()
@@ -209,6 +215,7 @@ class TestMistralLLM:
         async def slow(*args, **kwargs):
             await asyncio.sleep(3)
             return AIMessage(content="late")
+
         mock_llm.ainvoke = slow
 
         llm = MistralLLM()
@@ -249,6 +256,7 @@ class TestMistralLLM:
             yield empty
             yield good
             yield empty
+
         mock_llm.astream = filtered
 
         llm = MistralLLM()
@@ -259,7 +267,6 @@ class TestMistralLLM:
 
 
 class TestGetEmbeddings:
-
     def test_ollama_success(self):
         with patch("app.models.provider.get_ollama_embeddings") as m:
             mock_emb = MagicMock()

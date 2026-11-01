@@ -15,7 +15,5 @@ def test_graph_has_handoff_edge():
 
     graph = agent.get_graph()
     edges = graph.edges
-    handoff_found = any(
-        "handoff" in str(e) for e in edges
-    )
+    handoff_found = any("handoff" in str(e) for e in edges)
     assert handoff_found, "handoff edge not found in graph"

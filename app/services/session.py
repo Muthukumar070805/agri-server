@@ -1,20 +1,43 @@
-from typing import Optional
-from datetime import datetime, timedelta, timezone
-import json
 import asyncio
+import contextlib
+import json
+from collections.abc import Coroutine
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import redis.asyncio as redis
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _on_background_task_done(task: asyncio.Task) -> None:
+    _BACKGROUND_TASKS.discard(task)
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.warning(f"Background task failed: {error}")
+
+
+def _spawn(coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+    """Create a task that stays referenced until it finishes."""
+    try:
+        task = asyncio.create_task(coro)
+    except RuntimeError:
+        coro.close()
+        raise
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_on_background_task_done)
+    return task
+
 
 class SessionData:
     def __init__(self, session_id: str):
         self.session_id = session_id
-        self.created_at = datetime.now(timezone.utc)
-        self.last_activity = datetime.now(timezone.utc)
+        self.created_at = datetime.now(UTC)
+        self.last_activity = datetime.now(UTC)
         self.messages: list[dict] = []
         self.metadata: dict = {}
 
@@ -23,13 +46,13 @@ class SessionData:
             {
                 "role": role,
                 "content": content,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         )
-        self.last_activity = datetime.now(timezone.utc)
+        self.last_activity = datetime.now(UTC)
 
     def is_expired(self, ttl_minutes: int = 30) -> bool:
-        return datetime.now(timezone.utc) - self.last_activity > timedelta(minutes=ttl_minutes)
+        return datetime.now(UTC) - self.last_activity > timedelta(minutes=ttl_minutes)
 
     def to_dict(self) -> dict:
         return {
@@ -44,10 +67,10 @@ class SessionData:
         session = cls(session_id)
         session.messages = data.get("messages", [])
         session.created_at = datetime.fromisoformat(
-            data.get("created_at", datetime.now(timezone.utc).isoformat())
+            data.get("created_at", datetime.now(UTC).isoformat())
         )
         session.last_activity = datetime.fromisoformat(
-            data.get("last_activity", datetime.now(timezone.utc).isoformat())
+            data.get("last_activity", datetime.now(UTC).isoformat())
         )
         session.metadata = data.get("metadata", {})
         return session
@@ -57,7 +80,7 @@ class RedisSessionManager:
     """Redis-backed session manager for horizontal scaling."""
 
     def __init__(self):
-        self._client: Optional[redis.Redis] = None
+        self._client: redis.Redis | None = None
         self._settings = get_settings()
 
     async def _get_client(self) -> redis.Redis:
@@ -107,8 +130,8 @@ class RedisSessionManager:
 class SessionManager:
     def __init__(self):
         self._memory_sessions: dict[str, SessionData] = {}
-        self._redis_manager: Optional[RedisSessionManager] = None
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._redis_manager: RedisSessionManager | None = None
+        self._cleanup_task: asyncio.Task | None = None
         self._running = False
 
     async def _periodic_cleanup(self):
@@ -119,7 +142,7 @@ class SessionManager:
                 self.cleanup_expired(ttl_minutes=30)
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - cleanup must never die
                 logger.error(f"Session cleanup error: {e}")
 
     def start_cleanup_task(self):
@@ -129,12 +152,12 @@ class SessionManager:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    asyncio.create_task(self._periodic_cleanup())
+                    self._cleanup_task = _spawn(self._periodic_cleanup())
                     logger.info("Started session cleanup task (async)")
                 else:
                     self._cleanup_task = loop.create_task(self._periodic_cleanup())
                     logger.info("Started session cleanup task (sync)")
-            except Exception as e:
+            except RuntimeError as e:
                 logger.warning(f"Could not start cleanup task: {e}")
 
     async def stop_cleanup_task(self):
@@ -142,14 +165,12 @@ class SessionManager:
         self._running = False
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
             self._cleanup_task = None
             logger.info("Stopped session cleanup task")
 
-    def _get_redis_manager(self) -> Optional[RedisSessionManager]:
+    def _get_redis_manager(self) -> RedisSessionManager | None:
         settings = get_settings()
         if not settings.session_redis_enabled:
             return None
@@ -163,7 +184,7 @@ class SessionManager:
             try:
                 await redis_mgr.save(session)
                 logger.debug(f"Saved session to Redis: {session.session_id}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - memory fallback stays usable
                 logger.warning(f"Failed to save session to Redis: {e}")
 
     async def get_or_create(self, session_id: str) -> SessionData:
@@ -172,7 +193,7 @@ class SessionManager:
         if redis_mgr:
             try:
                 return await redis_mgr.get_or_create(session_id)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - memory fallback stays usable
                 logger.warning(f"Redis unavailable, falling back to memory: {e}")
 
         if session_id not in self._memory_sessions:
@@ -182,11 +203,11 @@ class SessionManager:
             session = self._memory_sessions[session_id]
             if session.is_expired():
                 session.messages = []
-                session.last_activity = datetime.now(timezone.utc)
+                session.last_activity = datetime.now(UTC)
                 logger.info(f"Reset expired session (memory): {session_id}")
         return self._memory_sessions[session_id]
 
-    def get(self, session_id: str) -> Optional[SessionData]:
+    def get(self, session_id: str) -> SessionData | None:
         return self._memory_sessions.get(session_id)
 
     def delete(self, session_id: str):
@@ -199,11 +220,11 @@ class SessionManager:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    asyncio.create_task(redis_mgr.delete(session_id))
+                    _spawn(redis_mgr.delete(session_id))
                 else:
                     loop.run_until_complete(redis_mgr.delete(session_id))
-            except Exception as e:
-                logger.warning(f"Failed to delete from Redis: {e}")
+            except Exception as e:  # noqa: BLE001 - memory fallback stays usable
+                logger.warning("Failed to delete from Redis: %s", e)
 
     def cleanup_expired(self, ttl_minutes: int = 30):
         expired = [
@@ -217,6 +238,13 @@ class SessionManager:
     async def save_session(self, session: SessionData):
         await self._save_to_redis(session)
         self._memory_sessions[session.session_id] = session
+
+    def save_in_background(self, session: SessionData) -> None:
+        """Persist the session without blocking the response path."""
+        try:
+            _spawn(self.save_session(session))
+        except RuntimeError as e:
+            logger.warning("Could not schedule session save: %s", e)
 
 
 session_manager = SessionManager()

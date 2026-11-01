@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-import asyncio
+
 from app.agent.graph import agent
 from app.services.session import session_manager
 
@@ -49,10 +49,7 @@ async def text_chat(request: ChatRequest):
         response = result.get("response", "No response generated")
         session.add_message("assistant", response)
 
-        try:
-            asyncio.create_task(session_manager.save_session(session))
-        except Exception:
-            pass
+        session_manager.save_in_background(session)
 
         schemes_data = result.get("scheme_data", {}).get("schemes", [])
 
@@ -64,4 +61,4 @@ async def text_chat(request: ChatRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Agent error: {e!s}") from e

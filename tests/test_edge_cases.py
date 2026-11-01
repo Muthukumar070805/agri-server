@@ -1,5 +1,7 @@
-from hypothesis import given, strategies as st, settings
 from fastapi.testclient import TestClient
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
 from main import app
 
 client = TestClient(app)

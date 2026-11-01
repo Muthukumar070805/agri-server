@@ -1,8 +1,8 @@
-from typing import Optional
 import redis.asyncio as redis
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
-from app.resilience.circuit_breaker import get_circuit, CircuitOpenError
+from app.resilience.circuit_breaker import CircuitOpenError, get_circuit
 
 logger = get_logger(__name__)
 
@@ -10,8 +10,8 @@ logger = get_logger(__name__)
 class RedisCache:
     def __init__(self):
         self.settings = get_settings()
-        self._pool: Optional[redis.ConnectionPool] = None
-        self._client: Optional[redis.Redis] = None
+        self._pool: redis.ConnectionPool | None = None
+        self._client: redis.Redis | None = None
 
     def _get_pool(self) -> redis.ConnectionPool:
         if self._pool is None:
@@ -34,7 +34,7 @@ class RedisCache:
             self._client = redis.Redis(connection_pool=self._get_pool())
         return self._client
 
-    async def get(self, key: str) -> Optional[str]:
+    async def get(self, key: str) -> str | None:
         cb = get_circuit("redis")
         try:
             client = await self.get_client()
@@ -42,7 +42,7 @@ class RedisCache:
         except CircuitOpenError:
             logger.warning(f"Redis circuit open for key: {key}")
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.error(f"Redis GET error for {key}: {e}")
             return None
 
@@ -53,7 +53,7 @@ class RedisCache:
             await cb.call(client.set, key, value, ex=ttl)
         except CircuitOpenError:
             logger.warning(f"Redis circuit open for set: {key}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - cache must never break callers
             logger.error(f"Redis SET error for {key}: {e}")
 
     async def close(self):

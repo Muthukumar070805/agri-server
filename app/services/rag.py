@@ -2,14 +2,15 @@ import asyncio
 import hashlib
 import json
 import threading
-from typing import Optional
+
 from langchain_pinecone import PineconeVectorStore
-from app.models.provider import ProviderSelector
+from sentence_transformers import CrossEncoder
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
-from app.resilience.circuit_breaker import get_circuit, CircuitOpenError
+from app.models.provider import ProviderSelector
+from app.resilience.circuit_breaker import CircuitOpenError, get_circuit
 from app.services.redis_cache import redis_cache
-from sentence_transformers import CrossEncoder
 
 logger = get_logger(__name__)
 
@@ -18,7 +19,7 @@ RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 _reranker = None
 _reranker_lock = threading.Lock()
 
-_vectorstore: Optional[PineconeVectorStore] = None
+_vectorstore: PineconeVectorStore | None = None
 _embeddings = None
 
 
@@ -62,7 +63,7 @@ def preload_reranker():
 
 
 async def query_schemes(
-    query: str, scheme_type: Optional[str] = None, top_k: int = 5, initial_k: int = 20
+    query: str, scheme_type: str | None = None, top_k: int = 5, initial_k: int = 20
 ) -> dict:
     settings = get_settings()
     if not settings.pinecone_api_key:
@@ -75,7 +76,8 @@ async def query_schemes(
         }
 
     if settings.llm_cache_enabled:
-        cache_key = f"rag:{hashlib.sha256(query.encode()).hexdigest()[:16]}:{scheme_type or 'all'}"
+        digest = hashlib.sha256(query.encode()).hexdigest()[:16]
+        cache_key = f"rag:{digest}:{scheme_type or 'all'}"
         cached = await redis_cache.get(cache_key)
         if cached:
             logger.info(f"RAG cache hit: {query[:50]}")
@@ -86,7 +88,7 @@ async def query_schemes(
 
         cb = get_circuit("pinecone")
         filter_expr = None
-        if scheme_type:
+        if scheme_type and isinstance(scheme_type, str):
             filter_expr = {"type": {"$eq": scheme_type}}
 
         logger.info(f"RAG: query='{query}', filter={filter_expr}, k={initial_k}")
@@ -128,7 +130,9 @@ async def query_schemes(
         loop = asyncio.get_event_loop()
         scores = await loop.run_in_executor(None, reranker.predict, pairs)
 
-        scored_docs = sorted(zip(scores, docs), key=lambda x: x[0], reverse=True)
+        scored_docs = sorted(
+            zip(scores, docs, strict=False), key=lambda x: x[0], reverse=True
+        )
         top_docs = [doc for score, doc in scored_docs][:top_k]
 
         logger.info(f"RAG: Reranked to {len(top_docs)} schemes")
@@ -138,7 +142,6 @@ async def query_schemes(
             schemes.append(
                 {
                     "content": doc.page_content,
-                    "crop": doc.metadata.get("crop"),
                     "type": doc.metadata.get("type"),
                 }
             )
@@ -156,17 +159,17 @@ async def query_schemes(
 
         return result
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - degraded RAG must not fail the request
         logger.error(f"RAG error for '{query[:60]}': {type(e).__name__}: {e}")
         return {
             "schemes": [],
             "filters_used": {"type": scheme_type},
             "count": 0,
-            "error": f"{type(e).__name__}: {str(e)}",
+            "error": f"{type(e).__name__}: {e!s}",
         }
 
 
 async def aquery_schemes(
-    query: str, scheme_type: Optional[str] = None, top_k: int = 5, initial_k: int = 20
+    query: str, scheme_type: str | None = None, top_k: int = 5, initial_k: int = 20
 ) -> dict:
     return await query_schemes(query, scheme_type, top_k, initial_k)

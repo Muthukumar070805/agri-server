@@ -1,12 +1,14 @@
-import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from app.resilience.circuit_breaker import (
     CircuitBreaker,
-    CircuitState,
     CircuitOpenError,
-    get_circuit,
+    CircuitState,
     _circuits,
+    get_circuit,
 )
 
 

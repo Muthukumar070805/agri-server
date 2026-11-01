@@ -1,5 +1,6 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 
 @pytest.mark.asyncio
@@ -10,8 +11,10 @@ async def test_astream_cached_returns_full_string():
     mock_sel_instance = MagicMock()
     mock_sel_instance.get_chat_llm.return_value = mock_llm
 
-    with patch("app.models.reasoning.llm_cache") as mock_cache, \
-         patch("app.models.reasoning.ProviderSelector", return_value=mock_sel_instance):
+    with (
+        patch("app.models.reasoning.llm_cache") as mock_cache,
+        patch("app.models.reasoning.ProviderSelector", return_value=mock_sel_instance),
+    ):
         mock_cache.get = AsyncMock(return_value="cached full response")
 
         llm = ReasoningLLM(model="test")
@@ -38,8 +41,10 @@ async def test_astream_no_cache_streams():
     mock_sel_instance = MagicMock()
     mock_sel_instance.get_chat_llm.return_value = mock_llm
 
-    with patch("app.models.reasoning.llm_cache") as mock_cache, \
-         patch("app.models.reasoning.ProviderSelector", return_value=mock_sel_instance):
+    with (
+        patch("app.models.reasoning.llm_cache") as mock_cache,
+        patch("app.models.reasoning.ProviderSelector", return_value=mock_sel_instance),
+    ):
         mock_cache.get = AsyncMock(return_value=None)
 
         llm = ReasoningLLM(model="test")

@@ -1,8 +1,10 @@
 import json
+
 import httpx
+
+from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.services.redis_cache import redis_cache
-from app.core.config import get_settings
 
 logger = get_logger(__name__)
 
@@ -25,7 +27,7 @@ async def fetch_weather(farm_id: str = "default") -> str:
             resp = await client.get(url)
             resp.raise_for_status()
             raw = resp.json()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - return cached/stub payload instead
         logger.error(f"Weather API error: {e}")
         if cached:
             return cached

@@ -1,5 +1,6 @@
-from unittest.mock import patch, AsyncMock
-from tests.helpers import validate_chat_response, assert_health_response
+from unittest.mock import AsyncMock, patch
+
+from tests.helpers import assert_health_response, validate_chat_response
 
 
 class TestRootEndpoint:

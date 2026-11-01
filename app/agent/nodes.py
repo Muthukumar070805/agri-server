@@ -10,8 +10,8 @@ async def classify(state: AgentState) -> AgentState:
     import asyncio
 
     from app.agent.tools import get_farm_data
-    from app.services.rag import aquery_schemes
     from app.models.classify import _fast_classify
+    from app.services.rag import aquery_schemes
 
     query = state["query"]
     callback = state.get("stream_callback")
@@ -69,9 +69,9 @@ async def rag_node(state: AgentState) -> AgentState:
     import hashlib
     import json
 
+    from app.core.config import get_settings
     from app.services.rag import aquery_schemes
     from app.services.redis_cache import redis_cache
-    from app.core.config import get_settings
 
     if state.get("scheme_data"):
         return state
@@ -82,7 +82,9 @@ async def rag_node(state: AgentState) -> AgentState:
     scheme_type = state.get("filters", {}).get("type")
 
     if settings.llm_cache_enabled:
-        cache_key = f"node_rag:{farm_id}:{hashlib.sha256(query.encode()).hexdigest()[:16]}"
+        cache_key = (
+            f"node_rag:{farm_id}:{hashlib.sha256(query.encode()).hexdigest()[:16]}"
+        )
         cached = await redis_cache.get(cache_key)
         if cached:
             state["scheme_data"] = json.loads(cached)
@@ -125,7 +127,12 @@ async def direct_node(state: AgentState) -> AgentState:
     qtype = state.get("query_type", "direct")
 
     logger = get_logger(__name__)
-    logger.info(f"direct_node: query_type={qtype}, has_context={len(context)>0}, streaming={state.get('stream_callback') is not None}")
+    logger.info(
+        "direct_node: query_type=%s, has_context=%s, streaming=%s",
+        qtype,
+        len(context) > 0,
+        state.get("stream_callback") is not None,
+    )
 
     tool_info = ""
     if tool_data:
@@ -140,7 +147,11 @@ async def direct_node(state: AgentState) -> AgentState:
         context_str = f"\n\nConversation History:\n{json.dumps(context, indent=2)}"
 
     full_prompt = f"User Query: {query}{tool_info}{scheme_info}{context_str}"
-    system_msg = "You are a helpful AI assistant for a farmer helpline. Use the provided farm data and scheme information to answer user questions accurately. Be concise for voice output."
+    system_msg = (
+        "You are a helpful AI assistant for a farmer helpline. Use the provided "
+        "farm data and scheme information to answer user questions accurately. "
+        "Be concise for voice output."
+    )
 
     llm = get_reasoning_llm()
     full_response = ""

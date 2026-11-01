@@ -1,7 +1,9 @@
 import asyncio
-from typing import Optional, Callable, Any
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
+
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -28,19 +30,20 @@ class CircuitBreaker:
 
         self._state = CircuitState.CLOSED
         self._failure_count = 0
-        self._last_failure_time: Optional[datetime] = None
-        self._opened_at: Optional[datetime] = None
+        self._last_failure_time: datetime | None = None
+        self._opened_at: datetime | None = None
         self._half_open_calls = 0
         self._lock = asyncio.Lock()
 
     @property
     def state(self) -> CircuitState:
-        if self._state == CircuitState.OPEN:
-            if self._opened_at:
-                if datetime.now(timezone.utc) - self._opened_at > timedelta(
-                    seconds=self.recovery_timeout
-                ):
-                    return CircuitState.HALF_OPEN
+        if (
+            self._state == CircuitState.OPEN
+            and self._opened_at
+            and datetime.now(UTC) - self._opened_at
+            > timedelta(seconds=self.recovery_timeout)
+        ):
+            return CircuitState.HALF_OPEN
         return self._state
 
     async def call(self, func: Callable, *args, **kwargs) -> Any:
@@ -50,11 +53,13 @@ class CircuitBreaker:
             if current_state == CircuitState.OPEN:
                 raise CircuitOpenError(f"Circuit {self.name} is OPEN")
 
-            if current_state == CircuitState.HALF_OPEN:
-                if self._half_open_calls >= self.half_open_max_calls:
-                    raise CircuitOpenError(
-                        f"Circuit {self.name} is HALF_OPEN (max calls reached)"
-                    )
+            if (
+                current_state == CircuitState.HALF_OPEN
+                and self._half_open_calls >= self.half_open_max_calls
+            ):
+                raise CircuitOpenError(
+                    f"Circuit {self.name} is HALF_OPEN (max calls reached)"
+                )
 
         try:
             result = func(*args, **kwargs)
@@ -80,17 +85,19 @@ class CircuitBreaker:
     async def _on_failure(self):
         async with self._lock:
             self._failure_count += 1
-            self._last_failure_time = datetime.now(timezone.utc)
+            self._last_failure_time = datetime.now(UTC)
 
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
-                self._opened_at = datetime.now(timezone.utc)
+                self._opened_at = datetime.now(UTC)
                 logger.warning(f"Circuit {self.name} OPEN (half-open test failed)")
             elif self._failure_count >= self.failure_threshold:
                 self._state = CircuitState.OPEN
-                self._opened_at = datetime.now(timezone.utc)
+                self._opened_at = datetime.now(UTC)
                 logger.warning(
-                    f"Circuit {self.name} OPEN (threshold: {self._failure_count} failures)"
+                    "Circuit %s OPEN (threshold: %s failures)",
+                    self.name,
+                    self._failure_count,
                 )
 
 

@@ -1,6 +1,7 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
+
+from app.agent.nodes import classify, direct_node, handoff_node, rag_node, tool_node
 from app.agent.state import AgentState
-from app.agent.nodes import classify, rag_node, tool_node, direct_node, handoff_node
 
 
 def route_query(state: AgentState) -> str:
