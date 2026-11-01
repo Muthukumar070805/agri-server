@@ -41,17 +41,18 @@ async def classify(state: AgentState) -> AgentState:
                 state["tool_data"] = {}
 
         elif predicted_type == "scheme":
-            llm_task = asyncio.create_task(classify_query(query))
-            rag_task = asyncio.create_task(aquery_schemes(query=query))
-
-            query_type, filters = await llm_task
+            # The metadata filter is only known once classification finishes, so
+            # RAG runs afterwards. Keyword-matched scheme queries return from
+            # _fast_classify instantly, so this adds no latency in practice.
+            query_type, filters = await classify_query(query)
             state["query_type"] = query_type
             state["filters"] = filters
 
             if query_type == "scheme":
-                state["scheme_data"] = await rag_task
+                state["scheme_data"] = await aquery_schemes(
+                    query=query, scheme_type=(filters or {}).get("type")
+                )
             else:
-                rag_task.cancel()
                 state["scheme_data"] = {}
         else:
             query_type, filters = await classify_query(query)
@@ -117,6 +118,54 @@ async def tool_node(state: AgentState) -> AgentState:
     return state
 
 
+def _format_scheme_context(scheme_data: dict) -> str:
+    schemes = scheme_data.get("schemes") or []
+    if not schemes:
+        return ""
+
+    blocks = []
+    for index, scheme in enumerate(schemes, start=1):
+        content = str(scheme.get("content", "")).strip()
+        if not content:
+            continue
+        scheme_type = scheme.get("type")
+        header = f"[{index}] {scheme_type}" if scheme_type else f"[{index}]"
+        blocks.append(f"{header}\n{content}")
+
+    if not blocks:
+        return ""
+
+    return "\n\nScheme Information:\n" + "\n\n".join(blocks)
+
+
+def _build_system_prompt(has_scheme_data: bool) -> str:
+    rules = [
+        "You are a helpful AI assistant for a farmer helpline.",
+        "Answer using only the farm data and scheme information provided in the "
+        "prompt.",
+        "Be concise: replies are read aloud over voice.",
+        "Never invent scheme eligibility rules, benefit amounts, deadlines, or "
+        "documents.",
+    ]
+    if has_scheme_data:
+        rules.append(
+            "For scheme questions, ground every claim in the Scheme Information and "
+            "name the scheme you are describing."
+        )
+        rules.append(
+            "If the Scheme Information does not answer the question, say you do not "
+            "have that detail and suggest contacting the local agriculture extension "
+            "office. Do not guess."
+        )
+    else:
+        rules.append(
+            "If no scheme information is provided for a scheme question, say you do "
+            "not have that detail and suggest contacting the local agriculture "
+            "extension office."
+        )
+    return " ".join(rules)
+
+
 async def direct_node(state: AgentState) -> AgentState:
     from app.models.reasoning import get_reasoning_llm
 
@@ -138,20 +187,14 @@ async def direct_node(state: AgentState) -> AgentState:
     if tool_data:
         tool_info = f"\n\nFarm Data:\n{json.dumps(tool_data, indent=2)}"
 
-    scheme_info = ""
-    if scheme_data:
-        scheme_info = f"\n\nScheme Information:\n{json.dumps(scheme_data, indent=2)}"
+    scheme_info = _format_scheme_context(scheme_data)
 
     context_str = ""
     if context:
         context_str = f"\n\nConversation History:\n{json.dumps(context, indent=2)}"
 
     full_prompt = f"User Query: {query}{tool_info}{scheme_info}{context_str}"
-    system_msg = (
-        "You are a helpful AI assistant for a farmer helpline. Use the provided "
-        "farm data and scheme information to answer user questions accurately. "
-        "Be concise for voice output."
-    )
+    system_msg = _build_system_prompt(has_scheme_data=bool(scheme_info))
 
     llm = get_reasoning_llm()
     full_response = ""

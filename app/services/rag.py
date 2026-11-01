@@ -133,7 +133,27 @@ async def query_schemes(
         scored_docs = sorted(
             zip(scores, docs, strict=False), key=lambda x: x[0], reverse=True
         )
-        top_docs = [doc for score, doc in scored_docs][:top_k]
+        top_score = float(scored_docs[0][0]) if scored_docs else 0.0
+
+        if (
+            settings.min_relevance_score > 0
+            and top_score < settings.min_relevance_score
+        ):
+            logger.info(
+                "RAG: top score %.4f below floor %.4f for '%s'",
+                top_score,
+                settings.min_relevance_score,
+                query[:60],
+            )
+            return {
+                "schemes": [],
+                "filters_used": {"type": scheme_type},
+                "count": 0,
+                "top_score": round(top_score, 4),
+                "reason": "below_relevance_threshold",
+            }
+
+        top_docs = [doc for _, doc in scored_docs][:top_k]
 
         logger.info(f"RAG: Reranked to {len(top_docs)} schemes")
 
@@ -152,9 +172,10 @@ async def query_schemes(
             "schemes": schemes,
             "filters_used": {"type": scheme_type},
             "count": len(schemes),
+            "top_score": round(top_score, 4),
         }
 
-        if settings.llm_cache_enabled:
+        if settings.llm_cache_enabled and schemes:
             await redis_cache.set(cache_key, json.dumps(result), ttl=3600)
 
         return result

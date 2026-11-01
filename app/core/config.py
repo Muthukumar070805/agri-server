@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     llm_cache_enabled: bool = False
     llm_cache_ttl_seconds: int = 3600
 
+    # RAG abstains when the best rerank score is below this floor.
+    # Keep at 0.0 until the index is rebuilt with the query-time embedding model.
+    min_relevance_score: float = 0.0
+
     weather_location: str = "Avadi"
 
     gee_project: str = "ringed-hearth-500008-j4"

@@ -26,6 +26,24 @@ class TestClassifyNode:
             result = await classify(state)
         assert result["query_type"] == "tool"
 
+    @pytest.mark.asyncio
+    async def test_classify_passes_scheme_type_to_rag(self):
+        from app.agent.nodes import classify
+
+        state = make_state(query="pm kisan loan")
+        with (
+            patch("app.agent.nodes.classify_query") as mock_cq,
+            patch("app.services.rag.aquery_schemes") as mock_rag,
+        ):
+            mock_cq.return_value = ("scheme", {"type": "credit_loan"})
+            mock_rag.return_value = {"schemes": [{"content": "PM Kisan"}]}
+            result = await classify(state)
+
+        mock_rag.assert_called_once_with(
+            query="pm kisan loan", scheme_type="credit_loan"
+        )
+        assert result["scheme_data"]["schemes"][0]["content"] == "PM Kisan"
+
 
 class TestToolNode:
     @pytest.mark.asyncio

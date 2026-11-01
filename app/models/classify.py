@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -44,134 +45,161 @@ Also extract metadata filters from the query if scheme-related:
       "filters": {{"type": "..." | null}}}}"""
 
 
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+_GREETING_PHRASES = (
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "good night",
+    "thank you",
+)
+
+_GREETING_TOKENS = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank",
+        "ok",
+        "okay",
+        "bye",
+        "goodbye",
+        "alright",
+        "welcome",
+        "yes",
+        "no",
+    }
+)
+
+_DIRECT_EXACT = frozenset(
+    {
+        "how are you",
+        "how are you doing",
+        "how is it going",
+        "who are you",
+        "what can you do",
+        "what do you do",
+    }
+)
+
+_SCHEME_KEYWORDS = (
+    "subsidy",
+    "loan",
+    "scheme",
+    "insurance",
+    "grant",
+    "incentive",
+    "pm-kisan",
+    "pm kisan",
+    "kisan samman",
+    "government",
+    "financial",
+    "pension",
+    "benefit",
+    "assistance",
+    "award",
+    "credit",
+)
+
+_TOOL_KEYWORDS = (
+    "weather",
+    "temperature",
+    "humidity",
+    "pressure",
+    "wind",
+    "rain",
+    "rainfall",
+    "soil",
+    "moisture",
+    "ph",
+    "nitrogen",
+    "phosphorus",
+    "potassium",
+    "satellite",
+    "ndvi",
+    "ndwi",
+    "crop health",
+    "crop status",
+    "iot",
+    "sensor",
+    "forecast",
+    "drought",
+)
+
+_SCHEME_PATTERNS = tuple(
+    re.compile(rf"\b{re.escape(term)}\b") for term in _SCHEME_KEYWORDS
+)
+_TOOL_PATTERNS = tuple(re.compile(rf"\b{re.escape(term)}\b") for term in _TOOL_KEYWORDS)
+
+
+def _strip_greeting(text: str) -> str:
+    lowered = text.strip().lower()
+    for phrase in _GREETING_PHRASES:
+        if lowered == phrase:
+            return ""
+        if lowered.startswith(phrase) and not lowered[len(phrase)].isalnum():
+            return lowered[len(phrase) :].lstrip(" ,.!?-")
+    match = _WORD_RE.match(lowered)
+    if match and match.group(0) in _GREETING_TOKENS:
+        return lowered[match.end() :].lstrip(" ,.!?-")
+    return lowered
+
+
+def _match_crop(content: str) -> str | None:
+    for crop in CROPS:
+        if crop != "all" and re.search(rf"\b{re.escape(crop)}\b", content):
+            return crop
+    return None
+
+
+def _match_scheme_type(content: str) -> str | None:
+    for scheme_type in SCHEME_TYPES:
+        label = scheme_type.replace("_", " ")
+        if re.search(rf"\b{re.escape(label)}\b", content) or re.search(
+            rf"\b{re.escape(scheme_type)}\b", content
+        ):
+            return scheme_type
+
+    words = set(_WORD_RE.findall(content))
+    for scheme_type in SCHEME_TYPES:
+        if set(scheme_type.split("_")) & words:
+            return scheme_type
+    return None
+
+
 def _fast_classify(
     query: str,
 ) -> tuple[Literal["tool", "scheme", "direct"], dict] | None:
-    content_lower = query.lower().strip()
+    content = _strip_greeting(query)
 
-    if any(
-        content_lower.startswith(p) or content_lower == p
-        for p in [
-            "hi",
-            "hello",
-            "hey",
-            "thanks",
-            "thank you",
-            "ok",
-            "okay",
-            "bye",
-            "good",
-            "yes",
-            "no",
-        ]
-    ) or any(p in content_lower for p in ["thank", "welcome", "ok,", "ok ", "alright"]):
+    if not content or content.strip(" ?!.,") in _DIRECT_EXACT:
         return "direct", {}
 
-    if any(
-        p in content_lower
-        for p in [
-            "weather",
-            "temperature",
-            "humidity",
-            "pressure",
-            "wind",
-            "rain",
-            "soil",
-            "moisture",
-            "ph",
-            "nitrogen",
-            "phosphorus",
-            "potassium",
-            "satellite",
-            "ndvi",
-            "ndwi",
-            "crop health",
-            "crop status",
-            "iot",
-            "sensor",
-        ]
-    ):
-        crop_match = None
-        for crop in CROPS:
-            if crop in content_lower and crop != "all":
-                crop_match = crop
-                break
-        return "tool", {"type": crop_match}
+    # Scheme keywords win: "soil health card scheme" is a scheme, not farm data.
+    if any(pattern.search(content) for pattern in _SCHEME_PATTERNS):
+        return "scheme", {"type": _match_scheme_type(content)}
 
-    if any(
-        p in content_lower
-        for p in [
-            "subsidy",
-            "loan",
-            "scheme",
-            "insurance",
-            "grant",
-            "incentive",
-            "pm-kisan",
-            "pm kisan",
-            "government",
-            "financial",
-            "pension",
-            "benefit",
-            "assistance",
-            "award",
-            "crop insurance",
-            "credit",
-        ]
-    ):
-        scheme_match = None
-        for st in SCHEME_TYPES:
-            label = st.replace("_", " ")
-            if label in content_lower or st in content_lower:
-                scheme_match = st
-                break
-        if not scheme_match:
-            words = set(content_lower.split())
-            for st in SCHEME_TYPES:
-                parts = set(st.split("_"))
-                if parts & words:
-                    scheme_match = st
-                    break
-        if scheme_match and scheme_match not in SCHEME_TYPES:
-            scheme_match = None
-        return "scheme", {"type": scheme_match}
+    if any(pattern.search(content) for pattern in _TOOL_PATTERNS):
+        return "tool", {"crop": _match_crop(content)}
 
     return None
 
 
 def _fallback_classify(query: str) -> tuple[Literal["tool", "scheme", "direct"], dict]:
-    content_lower = query.lower()
-    if any(
-        k in content_lower
-        for k in [
-            "subsidy",
-            "loan",
-            "scheme",
-            "insurance",
-            "grant",
-            "incentive",
-            "pm-kisan",
-            "government",
-            "financial",
-        ]
-    ):
-        return "scheme", {"type": None}
-    elif any(
-        k in content_lower
-        for k in [
-            "weather",
-            "soil",
-            "moisture",
-            "satellite",
-            "ndvi",
-            "iot",
-            "temperature",
-            "humidity",
-            "pressure",
-        ]
-    ):
-        return "tool", {"type": None}
-    return "direct", {}
+    return _fast_classify(query) or ("direct", {})
+
+
+def _normalize_filters(raw: object) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    if "type" not in raw:
+        return {}
+    scheme_type = raw.get("type")
+    if isinstance(scheme_type, str) and scheme_type in SCHEME_TYPES:
+        return {"type": scheme_type}
+    return {"type": None}
 
 
 async def classify_query(
@@ -199,9 +227,14 @@ async def classify_query(
 
     try:
         result = json.loads(content)
-        query_type = result.get("query_type", "direct")
-        filters = result.get("filters", {})
     except json.JSONDecodeError:
         return _fallback_classify(query)
 
-    return query_type, filters
+    if not isinstance(result, dict):
+        return _fallback_classify(query)
+
+    query_type = result.get("query_type")
+    if query_type not in ("tool", "scheme", "direct"):
+        query_type = "direct"
+
+    return query_type, _normalize_filters(result.get("filters"))
