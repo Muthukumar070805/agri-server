@@ -1,0 +1,31 @@
+{
+  "crops": [
+    "all",
+    "coconut",
+    "groundnut",
+    "horticulture",
+    "millets",
+    "oilpalm",
+    "oilseeds",
+    "paddy",
+    "pulses",
+    "sugarcane",
+    "vegetables"
+  ],
+  "types": [
+    "award_incentive",
+    "credit_loan",
+    "crop_insurance",
+    "crop_productivity",
+    "farm_mechanization",
+    "farmer_organization",
+    "input_subsidy",
+    "irrigation",
+    "organic_farming",
+    "pest_management",
+    "planting_material",
+    "seed_production",
+    "soil_health",
+    "training_extension"
+  ]
+}

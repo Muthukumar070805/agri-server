@@ -1,4 +1,4 @@
-﻿# Environment variables (secrets)
+# Environment variables (secrets)
 .env
 .env.local
 .env.*.local
@@ -9,9 +9,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 build/
 dist/
 wheels/
+*.egg-info/
 *.egg-info
 
 # Virtual environments
@@ -20,75 +22,80 @@ wheels/
 venv/
 venv
 
-# IDE
+# IDE & Editors
 .idea/
 .vscode/
+.cursor/
+.windsurf/
+.history/
 *.swp
 *.swo
 
 # Logs
 *.log
 logs/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Internal docs (contain secrets/config in comments)
-AGENTS.md
-Exotel_AI_Voice_Agent_API_Reference.md
-
-# Agent skills (personal coding assistant config)
-.agents/
-
-# Python version
-.python-version
-
-# Server logs
 server.err
 server.log
 server_err.log
 
-# Test files (stubs only, not current test suite)
-run_test.py
-test_server.py
-test_socket.py
-test_ws.py
+# OS & Backups
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.bak
+*.tmp
+*~
+*.orig
+*.rej
 
-# Graphify cache
-graphify-out/
+# Internal & Sensitive Documentation (secrets, gotchas, exploit vectors)
+AGENTS.md
+CLAUDE.md
+Exotel_AI_Voice_Agent_API_Reference.md
+RAG_ADVERSARIAL_TEST_SUITE.md
+ai-pipeline-algorithm.md
+rag_plan.md
+rag_plan_claude.md
+gemini_suggestion.md
+api_test_report.md
+session-*.md
+session-ses_281d.md
+thread.md
 
-# Opencode config
-skills-lock.json
+# Diagrams & local artifacts
+langgraph_workflow.png
+
+# Agent / AI Assistant Tooling & Cache
+.agents/
 .opencode/
 opencode.jsonc
-
-# Temp files
-session-ses_281d.md
-
-# Caller files (AI assistant)
-thread.md
-tools/
-
-# Untracked files/folders to ignore
-CLAUDE.md
-rag_plan.md
-gemini_suggestion.md
-metadata.json
-agents/
-scripts/
-rag_plan_claude.md
-
-# Coverage artifacts
-.coverage
-*.cover
-
-# Agent skill cache
+skills-lock.json
 .superpowers/
+tools/
+agents/
+
+# Graphify cache & visualizations
+graphify-out/
 
 # Auto-generated docs
 docs/
 
-# Temp test files
-api_test_report.md
-test_classify.py
+# Untracked config & scripts (check notes if required for deployment)
+scripts/
+
+# Test & Coverage artifacts
+.coverage
+.coverage.*
+*.cover
+coverage.xml
+report.xml
+htmlcov/
+.hypothesis/
+
+# Root-level manual test stubs (anchored to root so tests/ directory is not ignored)
+/run_test.py
+/test_server.py
+/test_socket.py
+/test_ws.py
+/test_classify.py
