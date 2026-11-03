@@ -99,3 +99,5 @@ htmlcov/
 /test_socket.py
 /test_ws.py
 /test_classify.py
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
