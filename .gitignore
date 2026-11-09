@@ -54,6 +54,10 @@ AGENTS.md
 CLAUDE.md
 Exotel_AI_Voice_Agent_API_Reference.md
 RAG_ADVERSARIAL_TEST_SUITE.md
+RAG_ADVERSARIAL_TEST_REPORT*.md
+phase2_summary.md
+usage_explanation.md
+SUGGESION_FILE.md
 ai-pipeline-algorithm.md
 rag_plan.md
 rag_plan_claude.md
@@ -92,6 +96,9 @@ coverage.xml
 report.xml
 htmlcov/
 .hypothesis/
+data/
+reports/
+test-results/
 
 # Root-level manual test stubs (anchored to root so tests/ directory is not ignored)
 /run_test.py
@@ -101,3 +108,4 @@ htmlcov/
 /test_classify.py
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+.pre-commit-cache/

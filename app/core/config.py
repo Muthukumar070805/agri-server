@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     pinecone_api_key: str = ""
     pinecone_host: str = ""
-    pinecone_index: str = ""
+    pinecone_index: str = "scheme-1536"
 
     # Provider selection
     provider: str = "ollama"  # "ollama" | "mistral"
@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     mistral_reasoning_model: str = "mistral-large-latest"
 
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_flash_model: str = "qwen2.5:0.5b"
-    ollama_reasoning_model: str = "gemma4:e2b"
-    ollama_embed_model: str = "nomic-embed-text:latest"
+    ollama_flash_model: str = ""
+    ollama_reasoning_model: str = ""
+    ollama_embed_model: str = "qwen3-local:latest"
+    ollama_embed_dimensions: int = 1536
 
     redis_host: str = "localhost"
     redis_port: int = 6379
@@ -44,8 +45,9 @@ class Settings(BaseSettings):
     llm_cache_ttl_seconds: int = 3600
 
     # RAG abstains when the best rerank score is below this floor.
-    # Keep at 0.0 until the index is rebuilt with the query-time embedding model.
-    min_relevance_score: float = 0.0
+    # CrossEncoder outputs raw logits (-15 to +10). Noise/hallucinations score < -9.0;
+    # relevant scheme documents score > -2.0.
+    min_relevance_score: float = -2.0
 
     weather_location: str = "Avadi"
 

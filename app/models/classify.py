@@ -86,11 +86,16 @@ _DIRECT_EXACT = frozenset(
 
 _SCHEME_KEYWORDS = (
     "subsidy",
+    "subsidies",
     "loan",
+    "loans",
     "scheme",
+    "schemes",
     "insurance",
     "grant",
+    "grants",
     "incentive",
+    "incentives",
     "pm-kisan",
     "pm kisan",
     "kisan samman",
@@ -98,6 +103,7 @@ _SCHEME_KEYWORDS = (
     "financial",
     "pension",
     "benefit",
+    "benefits",
     "assistance",
     "award",
     "credit",
@@ -133,6 +139,94 @@ _SCHEME_PATTERNS = tuple(
 )
 _TOOL_PATTERNS = tuple(re.compile(rf"\b{re.escape(term)}\b") for term in _TOOL_KEYWORDS)
 
+_INTENT_ACTION_TOKENS = frozenset(
+    {
+        "what",
+        "how",
+        "when",
+        "where",
+        "why",
+        "who",
+        "which",
+        "can",
+        "could",
+        "is",
+        "are",
+        "do",
+        "does",
+        "will",
+        "apply",
+        "subsidy",
+        "subsidies",
+        "scheme",
+        "schemes",
+        "loan",
+        "loans",
+        "insurance",
+        "grant",
+        "grants",
+        "incentive",
+        "incentives",
+        "benefit",
+        "benefits",
+        "cost",
+        "costs",
+        "price",
+        "prices",
+        "rate",
+        "rates",
+        "claim",
+        "claims",
+        "damage",
+        "damages",
+        "help",
+        "get",
+        "avail",
+        "process",
+        "register",
+        "eligibility",
+        "weather",
+        "rain",
+        "temperature",
+        "humidity",
+        "moisture",
+        "ph",
+        "ndvi",
+        "status",
+        "forecast",
+    }
+)
+
+_SCHEME_SYNONYMS = {
+    "tractor": ("farm_mechanization", "crop_productivity"),
+    "tractors": ("farm_mechanization", "crop_productivity"),
+    "tillers": ("farm_mechanization", "crop_productivity"),
+    "tiller": ("farm_mechanization", "crop_productivity"),
+    "harvester": ("farm_mechanization", "crop_productivity"),
+    "rotavator": ("farm_mechanization", "crop_productivity"),
+    "machinery": ("farm_mechanization", "crop_productivity"),
+    "implements": ("farm_mechanization", "crop_productivity"),
+    "equipment": ("farm_mechanization", "crop_productivity"),
+    "seeds": "seed_production",
+    "seed": "seed_production",
+    "drip": "irrigation",
+    "sprinkler": "irrigation",
+    "borewell": "irrigation",
+    "fertilizer": "input_subsidy",
+    "fertilizers": "input_subsidy",
+    "urea": "input_subsidy",
+    "vermicompost": "organic_farming",
+    "manure": "organic_farming",
+}
+
+
+def _is_underspecified_query(content: str) -> bool:
+    """Detect 1-2 token queries without interrogative or actionable intent."""
+    tokens = _WORD_RE.findall(content.lower())
+    if not tokens or len(tokens) > 2:
+        return False
+    return not any(token in _INTENT_ACTION_TOKENS for token in tokens)
+
 
 def _strip_greeting(text: str) -> str:
     lowered = text.strip().lower()
@@ -154,19 +248,37 @@ def _match_crop(content: str) -> str | None:
     return None
 
 
-def _match_scheme_type(content: str) -> str | None:
+def _match_scheme_types(content: str) -> list[str]:
+    matched: list[str] = []
+    # 1. Exact or multi-word match in official SCHEME_TYPES
     for scheme_type in SCHEME_TYPES:
         label = scheme_type.replace("_", " ")
-        if re.search(rf"\b{re.escape(label)}\b", content) or re.search(
+        has_match = re.search(rf"\b{re.escape(label)}\b", content) or re.search(
             rf"\b{re.escape(scheme_type)}\b", content
-        ):
-            return scheme_type
+        )
+        if has_match and scheme_type not in matched:
+            matched.append(scheme_type)
 
+    # 2. Token overlap with scheme type name components
     words = set(_WORD_RE.findall(content))
     for scheme_type in SCHEME_TYPES:
-        if set(scheme_type.split("_")) & words:
-            return scheme_type
-    return None
+        if (set(scheme_type.split("_")) & words) and scheme_type not in matched:
+            matched.append(scheme_type)
+
+    # 3. Domain synonyms
+    for term, mapped in _SCHEME_SYNONYMS.items():
+        if re.search(rf"\b{re.escape(term)}\b", content):
+            mapped_types = [mapped] if isinstance(mapped, str) else list(mapped)
+            for m_type in mapped_types:
+                if m_type in SCHEME_TYPES and m_type not in matched:
+                    matched.append(m_type)
+
+    return matched
+
+
+def _match_scheme_type(content: str) -> str | None:
+    types = _match_scheme_types(content)
+    return types[0] if types else None
 
 
 def _fast_classify(
@@ -177,9 +289,17 @@ def _fast_classify(
     if not content or content.strip(" ?!.,") in _DIRECT_EXACT:
         return "direct", {}
 
+    # Scalable ambiguity check for isolated 1-2 word nouns/entities
+    if _is_underspecified_query(content):
+        return "direct", {"ambiguous": True, "entity": content}
+
     # Scheme keywords win: "soil health card scheme" is a scheme, not farm data.
     if any(pattern.search(content) for pattern in _SCHEME_PATTERNS):
-        return "scheme", {"type": _match_scheme_type(content)}
+        matched_types = _match_scheme_types(content)
+        return "scheme", {
+            "type": matched_types[0] if matched_types else None,
+            "types": matched_types,
+        }
 
     if any(pattern.search(content) for pattern in _TOOL_PATTERNS):
         return "tool", {"crop": _match_crop(content)}
@@ -192,14 +312,42 @@ def _fallback_classify(query: str) -> tuple[Literal["tool", "scheme", "direct"],
 
 
 def _normalize_filters(raw: object) -> dict:
-    if not isinstance(raw, dict):
+    if not isinstance(raw, dict) or not raw:
         return {}
-    if "type" not in raw:
-        return {}
-    scheme_type = raw.get("type")
-    if isinstance(scheme_type, str) and scheme_type in SCHEME_TYPES:
-        return {"type": scheme_type}
-    return {"type": None}
+    result: dict = {}
+    if "crop" in raw and isinstance(raw["crop"], str) and raw["crop"] in CROPS:
+        result["crop"] = raw["crop"]
+
+    types: list[str] = []
+    raw_types = raw.get("types")
+    if isinstance(raw_types, list):
+        for t in raw_types:
+            if isinstance(t, str) and t in SCHEME_TYPES and t not in types:
+                types.append(t)
+
+    raw_type = raw.get("type")
+    if isinstance(raw_type, str) and raw_type in SCHEME_TYPES and raw_type not in types:
+        types.append(raw_type)
+
+    if "type" in raw or "types" in raw:
+        primary_type = (
+            types[0]
+            if types
+            else (
+                raw_type
+                if isinstance(raw_type, str) and raw_type in SCHEME_TYPES
+                else None
+            )
+        )
+        result["type"] = primary_type
+        result["types"] = types
+
+    if raw.get("ambiguous"):
+        result["ambiguous"] = True
+    if raw.get("entity"):
+        result["entity"] = raw["entity"]
+
+    return result
 
 
 async def classify_query(

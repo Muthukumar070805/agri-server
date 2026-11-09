@@ -63,21 +63,38 @@ def preload_reranker():
 
 
 async def query_schemes(
-    query: str, scheme_type: str | None = None, top_k: int = 5, initial_k: int = 20
+    query: str,
+    scheme_type: str | list[str] | None = None,
+    top_k: int = 8,
+    initial_k: int = 20,
 ) -> dict:
     settings = get_settings()
+
+    types_list: list[str] = []
+    if isinstance(scheme_type, list):
+        types_list = [t for t in scheme_type if isinstance(t, str) and t.strip()]
+    elif isinstance(scheme_type, str) and scheme_type.strip():
+        types_list = [scheme_type.strip()]
+
+    filters_used: dict = {
+        "type": types_list[0] if len(types_list) == 1 else None,
+        "types": types_list,
+    }
+
     if not settings.pinecone_api_key:
         logger.warning("Pinecone API key not configured")
         return {
             "schemes": [],
-            "filters_used": {"type": scheme_type},
+            "filters_used": filters_used,
             "count": 0,
             "error": "Pinecone API key not configured",
         }
 
+    type_cache_key = ",".join(sorted(types_list)) if types_list else "all"
+
     if settings.llm_cache_enabled:
         digest = hashlib.sha256(query.encode()).hexdigest()[:16]
-        cache_key = f"rag:{digest}:{scheme_type or 'all'}"
+        cache_key = f"rag:{digest}:{type_cache_key}"
         cached = await redis_cache.get(cache_key)
         if cached:
             logger.info(f"RAG cache hit: {query[:50]}")
@@ -88,55 +105,101 @@ async def query_schemes(
 
         cb = get_circuit("pinecone")
         filter_expr = None
-        if scheme_type and isinstance(scheme_type, str):
-            filter_expr = {"type": {"$eq": scheme_type}}
+        if len(types_list) == 1:
+            filter_expr = {"type": {"$eq": types_list[0]}}
+        elif len(types_list) > 1:
+            filter_expr = {"type": {"$in": types_list}}
 
         logger.info(f"RAG: query='{query}', filter={filter_expr}, k={initial_k}")
 
         try:
 
-            async def _search():
+            async def _search_pinecone(f_expr):
                 loop = asyncio.get_event_loop()
                 return await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
                         lambda: vectorstore.similarity_search(
-                            query, k=initial_k, filter=filter_expr
+                            query, k=initial_k, filter=f_expr
                         ),
                     ),
                     timeout=15.0,
                 )
 
-            docs = await cb.call(_search)
+            docs = await cb.call(_search_pinecone, filter_expr)
         except CircuitOpenError:
             cb = get_circuit("pinecone")
             logger.warning(f"Pinecone circuit OPEN (failures={cb._failure_count})")
             return {
                 "schemes": [],
-                "filters_used": {"type": scheme_type},
+                "filters_used": filters_used,
                 "count": 0,
                 "error": "RAG service temporarily unavailable",
             }
 
         logger.info(f"RAG: Pinecone returned {len(docs)} docs")
 
+        reranker = _get_reranker()
+        loop = asyncio.get_event_loop()
+
+        if docs:
+            pairs = [[query, doc.page_content] for doc in docs]
+            scores = await loop.run_in_executor(None, reranker.predict, pairs)
+            scored_docs = sorted(
+                zip(scores, docs, strict=False), key=lambda x: x[0], reverse=True
+            )
+            top_score = float(scored_docs[0][0]) if scored_docs else 0.0
+        else:
+            scored_docs = []
+            top_score = 0.0
+
+        # Resilient fallback: if category filtering was too restrictive
+        # or returned docs below floor, perform an unfiltered dense search
+        # to catch cross-component named schemes (e.g. PMKSY, SMAM)
+        floor = settings.min_relevance_score
+        if filter_expr is not None and (
+            not docs or (floor != 0.0 and top_score < floor)
+        ):
+            logger.info(
+                "RAG: Filter %s top score %.4f (floor %.4f). Retrying unfiltered...",
+                filter_expr,
+                top_score,
+                floor,
+            )
+            try:
+                unfiltered_docs = await cb.call(_search_pinecone, None)
+                if unfiltered_docs:
+                    unfiltered_pairs = [
+                        [query, doc.page_content] for doc in unfiltered_docs
+                    ]
+                    unfiltered_scores = await loop.run_in_executor(
+                        None, reranker.predict, unfiltered_pairs
+                    )
+                    unfiltered_scored = sorted(
+                        zip(unfiltered_scores, unfiltered_docs, strict=False),
+                        key=lambda x: x[0],
+                        reverse=True,
+                    )
+                    unfiltered_top_score = (
+                        float(unfiltered_scored[0][0]) if unfiltered_scored else 0.0
+                    )
+                    if unfiltered_top_score > top_score:
+                        docs = unfiltered_docs
+                        scored_docs = unfiltered_scored
+                        top_score = unfiltered_top_score
+                        logger.info(
+                            "RAG: Unfiltered fallback elevated top score to %.4f",
+                            top_score,
+                        )
+            except Exception as ex:  # noqa: BLE001
+                logger.warning("RAG: Unfiltered fallback query failed: %s", ex)
+
         if not docs:
             logger.warning(f"RAG: No documents found for query: {query}")
-            return {"schemes": [], "filters_used": {"type": scheme_type}, "count": 0}
-
-        reranker = _get_reranker()
-        pairs = [[query, doc.page_content] for doc in docs]
-
-        loop = asyncio.get_event_loop()
-        scores = await loop.run_in_executor(None, reranker.predict, pairs)
-
-        scored_docs = sorted(
-            zip(scores, docs, strict=False), key=lambda x: x[0], reverse=True
-        )
-        top_score = float(scored_docs[0][0]) if scored_docs else 0.0
+            return {"schemes": [], "filters_used": filters_used, "count": 0}
 
         if (
-            settings.min_relevance_score > 0
+            settings.min_relevance_score != 0.0
             and top_score < settings.min_relevance_score
         ):
             logger.info(
@@ -170,7 +233,7 @@ async def query_schemes(
 
         result = {
             "schemes": schemes,
-            "filters_used": {"type": scheme_type},
+            "filters_used": filters_used,
             "count": len(schemes),
             "top_score": round(top_score, 4),
         }
@@ -184,13 +247,16 @@ async def query_schemes(
         logger.error(f"RAG error for '{query[:60]}': {type(e).__name__}: {e}")
         return {
             "schemes": [],
-            "filters_used": {"type": scheme_type},
+            "filters_used": filters_used,
             "count": 0,
             "error": f"{type(e).__name__}: {e!s}",
         }
 
 
 async def aquery_schemes(
-    query: str, scheme_type: str | None = None, top_k: int = 5, initial_k: int = 20
+    query: str,
+    scheme_type: str | list[str] | None = None,
+    top_k: int = 8,
+    initial_k: int = 20,
 ) -> dict:
     return await query_schemes(query, scheme_type, top_k, initial_k)

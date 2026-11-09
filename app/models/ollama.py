@@ -14,7 +14,10 @@ def get_chat_llm(model: str | None = None, temperature: float = 0.1) -> ChatOlla
 
 def get_embeddings() -> OllamaEmbeddings:
     settings = get_settings()
-    return OllamaEmbeddings(
-        model=settings.ollama_embed_model,
-        base_url=settings.ollama_base_url,
-    )
+    kwargs = {
+        "model": settings.ollama_embed_model,
+        "base_url": settings.ollama_base_url,
+    }
+    if getattr(settings, "ollama_embed_dimensions", 0) > 0:
+        kwargs["dimensions"] = settings.ollama_embed_dimensions
+    return OllamaEmbeddings(**kwargs)
