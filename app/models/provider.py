@@ -222,17 +222,16 @@ class ProviderSelector:
             logger.warning(f"Ollama embeddings unavailable: {e}")
             if self.provider == "mistral":
                 try:
-                    logger.warning(
-                        "Falling back to MistralAIEmbeddings (1024-dim); "
-                        "ensure vector index matches dimensions"
+                    logger.info(
+                        "Falling back to MistralAIEmbeddings (%s, 1536-dim)",
+                        settings.mistral_embed_model,
                     )
                     return MistralAIEmbeddings(
-                        model="mistral-embed",
+                        model=settings.mistral_embed_model,
                         api_key=settings.mistral_api_key,
                     )
                 except Exception as e2:  # noqa: BLE001 - re-raised below
                     logger.error(f"Mistral embeddings also failed: {e2}")
-            raise
             raise
 
     def resolve_model(self, task: str = "classify") -> str:

@@ -289,7 +289,7 @@ class TestGetEmbeddings:
             result = sel.get_embeddings()
             assert result is mock_instance
             mock_mistral.assert_called_once_with(
-                model="mistral-embed",
+                model="codestral-embed",
                 api_key="real-mistral-key-xyz789",
             )
 

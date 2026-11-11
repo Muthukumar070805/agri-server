@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     mistral_model: str = "mistral-small-latest"
     mistral_reasoning_model: str = "mistral-large-latest"
+    mistral_embed_model: str = "codestral-embed"
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_flash_model: str = ""
