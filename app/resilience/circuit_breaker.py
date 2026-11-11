@@ -53,13 +53,13 @@ class CircuitBreaker:
             if current_state == CircuitState.OPEN:
                 raise CircuitOpenError(f"Circuit {self.name} is OPEN")
 
-            if (
-                current_state == CircuitState.HALF_OPEN
-                and self._half_open_calls >= self.half_open_max_calls
-            ):
-                raise CircuitOpenError(
-                    f"Circuit {self.name} is HALF_OPEN (max calls reached)"
-                )
+            if current_state == CircuitState.HALF_OPEN:
+                if self._half_open_calls >= self.half_open_max_calls:
+                    raise CircuitOpenError(
+                        f"Circuit {self.name} is HALF_OPEN (max calls reached)"
+                    )
+                self._state = CircuitState.HALF_OPEN
+                self._half_open_calls += 1
 
         try:
             result = func(*args, **kwargs)
@@ -90,10 +90,12 @@ class CircuitBreaker:
             if self._state == CircuitState.HALF_OPEN:
                 self._state = CircuitState.OPEN
                 self._opened_at = datetime.now(UTC)
+                self._half_open_calls = 0
                 logger.warning(f"Circuit {self.name} OPEN (half-open test failed)")
             elif self._failure_count >= self.failure_threshold:
                 self._state = CircuitState.OPEN
                 self._opened_at = datetime.now(UTC)
+                self._half_open_calls = 0
                 logger.warning(
                     "Circuit %s OPEN (threshold: %s failures)",
                     self.name,

@@ -372,6 +372,10 @@ async def classify_query(
         return _fallback_classify(query)
 
     content = response.content.strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+        content = content.strip()
 
     try:
         result = json.loads(content)

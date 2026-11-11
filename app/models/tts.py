@@ -9,51 +9,54 @@ import pyaudio
 from sarvamai import AsyncSarvamAI, AudioOutput, EventResponse
 
 # ---------------- AUDIO SETUP ----------------
-p = pyaudio.PyAudio()
-
-stream = p.open(format=pyaudio.paInt16, channels=1, rate=22050, output=True)
-
-audio_queue = queue.Queue()
-
-
-# ---------------- AUDIO THREAD ----------------
-def audio_player():
-    while True:
-        chunk = audio_queue.get()
-        if chunk is None:
-            break
-        stream.write(chunk)
-
-
-threading.Thread(target=audio_player, daemon=True).start()
-
-
-# ---------------- FFMPEG PROCESS ----------------
 FFMPEG_BIN = shutil.which("ffmpeg") or "ffmpeg"
+_stream = None
+_audio_queue = None
+_ffmpeg_process = None
 
-ffmpeg_process = subprocess.Popen(  # noqa: S603 - fixed argv, resolved binary
-    [
-        FFMPEG_BIN,
-        "-i",
-        "pipe:0",  # input from stdin (MP3)
-        "-f",
-        "s16le",  # raw PCM output
-        "-acodec",
-        "pcm_s16le",
-        "-ac",
-        "1",  # mono
-        "-ar",
-        "22050",  # sample rate
-        "pipe:1",
-    ],
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.DEVNULL,
-)
+
+def _get_audio_pipeline():
+    global _stream, _audio_queue, _ffmpeg_process
+    if _stream is None:
+        p = pyaudio.PyAudio()
+        _stream = p.open(format=pyaudio.paInt16, channels=1, rate=22050, output=True)
+        _audio_queue = queue.Queue()
+
+        def audio_player():
+            while True:
+                chunk = _audio_queue.get()
+                if chunk is None:
+                    break
+                _stream.write(chunk)
+
+        threading.Thread(target=audio_player, daemon=True).start()
+
+    if _ffmpeg_process is None:
+        _ffmpeg_process = subprocess.Popen(  # noqa: S603 - fixed argv, resolved binary
+            [
+                FFMPEG_BIN,
+                "-i",
+                "pipe:0",  # input from stdin (MP3)
+                "-f",
+                "s16le",  # raw PCM output
+                "-acodec",
+                "pcm_s16le",
+                "-ac",
+                "1",  # mono
+                "-ar",
+                "22050",  # sample rate
+                "pipe:1",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    return _stream, _audio_queue, _ffmpeg_process
 
 
 # ---------------- MAIN ----------------
 async def tts_stream():
+    _, audio_queue, ffmpeg_process = _get_audio_pipeline()
     client = AsyncSarvamAI(api_subscription_key="YOUR_API_KEY")
 
     async with client.text_to_speech_streaming.connect(

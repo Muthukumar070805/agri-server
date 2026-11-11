@@ -61,4 +61,6 @@ async def text_chat(request: ChatRequest):
         )
 
     except Exception as e:
+        if session.messages and session.messages[-1].get("role") == "user":
+            session.messages.pop()
         raise HTTPException(status_code=500, detail=f"Agent error: {e!s}") from e

@@ -246,5 +246,11 @@ class SessionManager:
         except RuntimeError as e:
             logger.warning("Could not schedule session save: %s", e)
 
+    async def close(self):
+        """Close Redis connection on shutdown."""
+        if self._redis_manager:
+            await self._redis_manager.close()
+            logger.info("Closed Redis session manager connection")
+
 
 session_manager = SessionManager()

@@ -21,11 +21,15 @@ def _safe_parse(raw, label):
 
 async def get_farm_data(farm_id: str = "default") -> str:
     """Get all farm data: weather, soil/IoT, satellite."""
-    weather, soil, satellite = await asyncio.gather(
+    results = await asyncio.gather(
         fetch_weather(farm_id),
         fetch_soil(farm_id),
         fetch_satellite(farm_id),
+        return_exceptions=True,
     )
+    weather = results[0] if not isinstance(results[0], Exception) else ""
+    soil = results[1] if not isinstance(results[1], Exception) else ""
+    satellite = results[2] if not isinstance(results[2], Exception) else ""
 
     return json.dumps(
         {

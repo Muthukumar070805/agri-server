@@ -35,14 +35,25 @@ _rate_limit_store: dict[str, list[datetime]] = defaultdict(list)
 
 def _clean_old_entries(client_id: str):
     cutoff = datetime.now(UTC) - timedelta(seconds=RATE_LIMIT_WINDOW)
-    _rate_limit_store[client_id] = [
-        ts for ts in _rate_limit_store[client_id] if ts > cutoff
-    ]
+    filtered = [ts for ts in _rate_limit_store.get(client_id, []) if ts > cutoff]
+    if filtered:
+        _rate_limit_store[client_id] = filtered
+    elif client_id in _rate_limit_store:
+        del _rate_limit_store[client_id]
+
+    if len(_rate_limit_store) > 1000:
+        stale = [
+            cid
+            for cid, times in _rate_limit_store.items()
+            if not any(ts > cutoff for ts in times)
+        ]
+        for cid in stale:
+            del _rate_limit_store[cid]
 
 
 def _check_rate_limit(client_id: str) -> bool:
     _clean_old_entries(client_id)
-    return len(_rate_limit_store[client_id]) < RATE_LIMIT_REQUESTS
+    return len(_rate_limit_store.get(client_id, [])) < RATE_LIMIT_REQUESTS
 
 
 def _record_request(client_id: str):
@@ -85,6 +96,10 @@ async def lifespan(app: FastAPI):
     yield
 
     await session_manager.stop_cleanup_task()
+    await session_manager.close()
+    from app.services.redis_cache import redis_cache
+
+    await redis_cache.close()
     thread.join(timeout=5)
     logger.info("Server shutting down")
 
@@ -107,15 +122,27 @@ app.add_middleware(
 @app.middleware("http")
 async def request_size_limit(request: Request, call_next):
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_REQUEST_SIZE:
-        from fastapi.responses import JSONResponse
+    if content_length:
+        try:
+            length_val = int(content_length)
+            if length_val > MAX_REQUEST_SIZE:
+                from fastapi.responses import JSONResponse
 
-        return JSONResponse(
-            status_code=413,
-            content={
-                "detail": f"Request too large. Max size: {MAX_REQUEST_SIZE} bytes"
-            },
-        )
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": (
+                            f"Request too large. Max size: {MAX_REQUEST_SIZE} bytes"
+                        )
+                    },
+                )
+        except (ValueError, TypeError):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid Content-Length header"},
+            )
     response = await call_next(request)
     return response
 

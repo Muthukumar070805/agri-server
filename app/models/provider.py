@@ -222,7 +222,10 @@ class ProviderSelector:
             logger.warning(f"Ollama embeddings unavailable: {e}")
             if self.provider == "mistral":
                 try:
-                    logger.info("Falling back to MistralAIEmbeddings")
+                    logger.warning(
+                        "Falling back to MistralAIEmbeddings (1024-dim); "
+                        "ensure vector index matches dimensions"
+                    )
                     return MistralAIEmbeddings(
                         model="mistral-embed",
                         api_key=settings.mistral_api_key,

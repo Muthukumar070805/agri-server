@@ -157,9 +157,21 @@ class TestCircuitBreakerHalfOpen:
             with pytest.raises(ValueError):
                 await cb.call(fail_fn)
         await asyncio.sleep(0.01)
-        success_fn = MagicMock(return_value="ok")
-        result = await cb.call(success_fn)
-        assert result == "ok"
+        assert cb.state == CircuitState.HALF_OPEN
+
+        slow_future: asyncio.Future = asyncio.Future()
+
+        async def slow_fn():
+            return await slow_future
+
+        task1 = asyncio.create_task(cb.call(slow_fn))
+        await asyncio.sleep(0.01)
+
+        with pytest.raises(CircuitOpenError, match="max calls reached"):
+            await cb.call(MagicMock(return_value="ok"))
+
+        slow_future.set_result("ok")
+        await task1
         assert cb.state == CircuitState.CLOSED
 
 

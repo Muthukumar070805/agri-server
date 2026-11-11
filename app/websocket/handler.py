@@ -82,45 +82,51 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
                 _run_agent(message, history, current_session_id, queue)
             )
 
-            while True:
-                token = await queue.get()
-                if token is None:
-                    break
-                await websocket.send_json({"chunk": token})
-
             try:
-                result = await task
-                response_text = (
-                    result.get("response", "No response generated")
-                    if result
-                    else "Sorry, I'm having trouble processing your request."
+                while True:
+                    token = await queue.get()
+                    if token is None:
+                        break
+                    await websocket.send_json({"chunk": token})
+
+                try:
+                    result = await task
+                    response_text = (
+                        result.get("response", "No response generated")
+                        if result
+                        else "Sorry, I'm having trouble processing your request."
+                    )
+                    query_type = (
+                        result.get("query_type", "unknown") if result else "unknown"
+                    )
+                except Exception:  # noqa: BLE001 - fallback text, never break the stream
+                    response_text = "Sorry, I'm having trouble processing your request."
+                    query_type = "unknown"
+
+                session.add_message("assistant", response_text)
+
+                session_manager.save_in_background(session)
+
+                schemes_data = (
+                    result.get("scheme_data", {}).get("schemes", []) if result else []
                 )
-                query_type = (
-                    result.get("query_type", "unknown") if result else "unknown"
+
+                await websocket.send_json(
+                    {
+                        "done": True,
+                        "response": response_text,
+                        "session_id": current_session_id,
+                        "scheme_list": schemes_data,
+                        "query_type": query_type,
+                    }
                 )
-            except Exception:  # noqa: BLE001 - fallback text, never break the stream
-                response_text = "Sorry, I'm having trouble processing your request."
-                query_type = "unknown"
 
-            session.add_message("assistant", response_text)
-
-            session_manager.save_in_background(session)
-
-            schemes_data = (
-                result.get("scheme_data", {}).get("schemes", []) if result else []
-            )
-
-            await websocket.send_json(
-                {
-                    "done": True,
-                    "response": response_text,
-                    "session_id": current_session_id,
-                    "scheme_list": schemes_data,
-                    "query_type": query_type,
-                }
-            )
-
-            logger.info(f"Response sent: {response_text[:50]}...")
+                logger.info(f"Response sent: {response_text[:50]}...")
+            finally:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: session_id={session_id}")

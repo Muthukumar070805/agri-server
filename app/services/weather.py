@@ -27,29 +27,28 @@ async def fetch_weather(farm_id: str = "default") -> str:
             resp = await client.get(url)
             resp.raise_for_status()
             raw = resp.json()
+
+        cc = raw["current_condition"][0]
+        data = json.dumps(
+            {
+                "temp_C": cc["temp_C"],
+                "humidity": cc["humidity"],
+                "pressure": cc["pressure"],
+                "visibility": cc["visibility"],
+                "weatherCode": cc["weatherCode"],
+                "feelsLikeC": cc["FeelsLikeC"],
+                "windSpeedKmph": cc["windspeedKmph"],
+                "windDir16Point": cc["winddir16Point"],
+                "cloudcover": cc["cloudcover"],
+                "uvIndex": cc["uvIndex"],
+                "condition": cc["weatherDesc"][0]["value"],
+                "precipMM": cc["precipMM"],
+            }
+        )
+        await redis_cache.set(f"weather:{farm_id}", data, ttl=CACHE_TTL)
+        return data
     except Exception as e:  # noqa: BLE001 - return cached/stub payload instead
         logger.error(f"Weather API error: {e}")
         if cached:
             return cached
         return json.dumps({"error": "Weather data temporarily unavailable"})
-
-    cc = raw["current_condition"][0]
-    data = json.dumps(
-        {
-            "temp_C": cc["temp_C"],
-            "humidity": cc["humidity"],
-            "pressure": cc["pressure"],
-            "visibility": cc["visibility"],
-            "weatherCode": cc["weatherCode"],
-            "feelsLikeC": cc["FeelsLikeC"],
-            "windSpeedKmph": cc["windspeedKmph"],
-            "windDir16Point": cc["winddir16Point"],
-            "cloudcover": cc["cloudcover"],
-            "uvIndex": cc["uvIndex"],
-            "condition": cc["weatherDesc"][0]["value"],
-            "precipMM": cc["precipMM"],
-        }
-    )
-
-    await redis_cache.set(f"weather:{farm_id}", data, ttl=CACHE_TTL)
-    return data
