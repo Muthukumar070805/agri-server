@@ -247,7 +247,15 @@ class SessionManager:
             logger.warning("Could not schedule session save: %s", e)
 
     async def close(self):
-        """Close Redis connection on shutdown."""
+        """Close Redis connection and await pending background session tasks."""
+        if _BACKGROUND_TASKS:
+            pending = list(_BACKGROUND_TASKS)
+            logger.info(f"Draining {len(pending)} pending background session tasks...")
+            try:
+                await asyncio.wait(pending, timeout=5.0)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Error draining background session tasks: {e}")
+
         if self._redis_manager:
             await self._redis_manager.close()
             logger.info("Closed Redis session manager connection")

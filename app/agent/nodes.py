@@ -322,9 +322,13 @@ async def direct_node(state: AgentState) -> AgentState:
             full_response += token
             await callback(token)
     else:
+        from app.core.config import get_settings
+
+        timeout = get_settings().llm_timeout_seconds
         loop = asyncio.get_running_loop()
-        full_response = await loop.run_in_executor(
-            None, llm.generate, full_prompt, system_msg
+        full_response = await asyncio.wait_for(
+            loop.run_in_executor(None, llm.generate, full_prompt, system_msg),
+            timeout=float(timeout),
         )
 
     state["response"] = full_response

@@ -49,6 +49,4 @@ async def fetch_weather(farm_id: str = "default") -> str:
         return data
     except Exception as e:  # noqa: BLE001 - return cached/stub payload instead
         logger.error(f"Weather API error: {e}")
-        if cached:
-            return cached
         return json.dumps({"error": "Weather data temporarily unavailable"})

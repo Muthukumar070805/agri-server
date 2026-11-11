@@ -62,6 +62,26 @@ def preload_reranker():
         logger.info("CrossEncoder reranker loaded successfully")
 
 
+def validate_rag_index_compatibility() -> None:
+    """Verify configured embedding dimension matches Pinecone requirement.
+
+    Refuses startup if an incompatible dimension is detected.
+    """
+    settings = get_settings()
+    if not settings.pinecone_api_key:
+        return
+
+    target_dim = getattr(settings, "ollama_embed_dimensions", 1536)
+    if "1536" in settings.pinecone_index and target_dim != 1536:
+        err_msg = (
+            f"RAG Index Compatibility Error: Pinecone index "
+            f"'{settings.pinecone_index}' requires 1536 dimensions, "
+            f"but configured dimension is {target_dim}."
+        )
+        logger.error(err_msg)
+        raise RuntimeError(err_msg)
+
+
 async def query_schemes(
     query: str,
     scheme_type: str | list[str] | None = None,

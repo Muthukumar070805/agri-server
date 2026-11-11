@@ -28,8 +28,6 @@ async def text_chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     session = await session_manager.get_or_create(request.session_id)
-    session.add_message("user", request.query)
-
     history = session.messages[-10:]
 
     try:
@@ -47,6 +45,7 @@ async def text_chat(request: ChatRequest):
         )
 
         response = result.get("response", "No response generated")
+        session.add_message("user", request.query)
         session.add_message("assistant", response)
 
         session_manager.save_in_background(session)
@@ -61,6 +60,4 @@ async def text_chat(request: ChatRequest):
         )
 
     except Exception as e:
-        if session.messages and session.messages[-1].get("role") == "user":
-            session.messages.pop()
         raise HTTPException(status_code=500, detail=f"Agent error: {e!s}") from e

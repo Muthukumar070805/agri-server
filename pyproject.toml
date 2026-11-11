@@ -24,11 +24,15 @@ dependencies = [
     "langchain-mistralai>=0.1.0",
     "sentence-transformers>=3.0.0",
     "requests>=2.31.0",
-    "pyaudio>=0.2.14",
     "pipecat-ai>=0.0.108",
     "python-socketio[asyncio]>=5.11.0",
     "nest-asyncio>=1.6.0",
     "earthengine-api>=1.2.0",
+]
+
+[project.optional-dependencies]
+audio = [
+    "pyaudio>=0.2.14",
 ]
 
 [dependency-groups]

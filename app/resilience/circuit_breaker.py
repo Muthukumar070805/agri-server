@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -46,7 +47,21 @@ class CircuitBreaker:
             return CircuitState.HALF_OPEN
         return self._state
 
+    def snapshot(self) -> dict[str, Any]:
+        """Return public snapshot of circuit breaker state."""
+        return {
+            "name": self.name,
+            "state": self.state.value,
+            "failures": self._failure_count,
+            "last_failure": self._last_failure_time.isoformat()
+            if self._last_failure_time
+            else None,
+            "opened_at": self._opened_at.isoformat() if self._opened_at else None,
+            "half_open_calls": self._half_open_calls,
+        }
+
     async def call(self, func: Callable, *args, **kwargs) -> Any:
+        is_probe = False
         async with self._lock:
             current_state = self.state
 
@@ -60,18 +75,27 @@ class CircuitBreaker:
                     )
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_calls += 1
+                is_probe = True
 
+        completed = False
         try:
             result = func(*args, **kwargs)
-            if asyncio.iscoroutine(result):
+            if inspect.isawaitable(result):
                 result = await result
 
             await self._on_success()
+            completed = True
             return result
 
         except Exception:
             await self._on_failure()
+            completed = True
             raise
+        finally:
+            if not completed and is_probe:
+                async with self._lock:
+                    if self._state == CircuitState.HALF_OPEN:
+                        self._half_open_calls = max(0, self._half_open_calls - 1)
 
     async def _on_success(self):
         async with self._lock:

@@ -174,6 +174,36 @@ class TestCircuitBreakerHalfOpen:
         await task1
         assert cb.state == CircuitState.CLOSED
 
+    @pytest.mark.asyncio
+    async def test_half_open_probe_cancellation_releases_slot(self):
+        cb = CircuitBreaker(
+            "test", failure_threshold=1, recovery_timeout=0, half_open_max_calls=1
+        )
+        fail_fn = MagicMock(side_effect=ValueError("fail"))
+        with pytest.raises(ValueError):
+            await cb.call(fail_fn)
+        await asyncio.sleep(0.01)
+        assert cb.state == CircuitState.HALF_OPEN
+
+        slow_future: asyncio.Future = asyncio.Future()
+
+        async def slow_fn():
+            return await slow_future
+
+        task = asyncio.create_task(cb.call(slow_fn))
+        await asyncio.sleep(0.01)
+        assert cb._half_open_calls == 1
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert cb._half_open_calls == 0
+        success_fn = MagicMock(return_value="ok")
+        result = await cb.call(success_fn)
+        assert result == "ok"
+        assert cb.state == CircuitState.CLOSED
+
 
 class TestCircuitsRegistry:
     def test_get_circuit_singleton(self):

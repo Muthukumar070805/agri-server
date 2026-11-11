@@ -85,5 +85,13 @@ class LLMCache:
             logger.warning(f"LLM cache clear error: {e}")
             return False
 
+    async def close(self):
+        if self._client:
+            if hasattr(self._client, "aclose"):
+                await self._client.aclose()
+            else:
+                await self._client.close()
+            self._client = None
+
 
 llm_cache = LLMCache()

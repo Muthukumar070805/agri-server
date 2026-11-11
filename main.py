@@ -60,9 +60,34 @@ def _record_request(client_id: str):
     _rate_limit_store[client_id].append(datetime.now(UTC))
 
 
+async def _check_rate_limit_distributed(client_id: str) -> bool:
+    from app.services.redis_cache import redis_cache
+
+    key = f"rate_limit:{client_id}"
+    try:
+        client = await redis_cache.get_client()
+        now = datetime.now(UTC).timestamp()
+        cutoff = now - RATE_LIMIT_WINDOW
+
+        pipe = client.pipeline()
+        pipe.zremrangebyscore(key, 0, cutoff)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, RATE_LIMIT_WINDOW + 10)
+        results = await pipe.execute()
+        req_count = results[2]
+        return req_count <= RATE_LIMIT_REQUESTS
+    except Exception:  # noqa: BLE001 - fallback to memory limiter on Redis failure
+        if not _check_rate_limit(client_id):
+            return False
+        _record_request(client_id)
+        return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.config import validate_required_keys
+    from app.services.rag import validate_rag_index_compatibility
     from app.services.session import session_manager
 
     logger.info("Server starting...")
@@ -70,6 +95,12 @@ async def lifespan(app: FastAPI):
     missing_keys = validate_required_keys()
     if missing_keys:
         logger.warning(f"Config issues detected: {missing_keys}. Check .env file.")
+
+    try:
+        validate_rag_index_compatibility()
+    except Exception as e:
+        logger.critical(f"RAG Startup Refusal: {e}")
+        raise
 
     def _preload():
         try:
@@ -97,9 +128,11 @@ async def lifespan(app: FastAPI):
 
     await session_manager.stop_cleanup_task()
     await session_manager.close()
+    from app.services.llm_cache import llm_cache
     from app.services.redis_cache import redis_cache
 
     await redis_cache.close()
+    await llm_cache.close()
     thread.join(timeout=5)
     logger.info("Server shutting down")
 
@@ -125,6 +158,13 @@ async def request_size_limit(request: Request, call_next):
     if content_length:
         try:
             length_val = int(content_length)
+            if length_val < 0:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
             if length_val > MAX_REQUEST_SIZE:
                 from fastapi.responses import JSONResponse
 
@@ -143,6 +183,17 @@ async def request_size_limit(request: Request, call_next):
                 status_code=400,
                 content={"detail": "Invalid Content-Length header"},
             )
+    elif "chunked" in request.headers.get("transfer-encoding", "").lower():
+        body = await request.body()
+        if len(body) > MAX_REQUEST_SIZE:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "detail": (f"Request too large. Max size: {MAX_REQUEST_SIZE} bytes")
+                },
+            )
     response = await call_next(request)
     return response
 
@@ -153,7 +204,7 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
 
     client_id = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(client_id):
+    if not await _check_rate_limit_distributed(client_id):
         from fastapi.responses import JSONResponse
 
         return JSONResponse(
@@ -165,7 +216,6 @@ async def rate_limit_middleware(request: Request, call_next):
                 )
             },
         )
-    _record_request(client_id)
     return await call_next(request)
 
 
@@ -186,10 +236,8 @@ async def circuit_health():
     return {
         name: {
             "state": cb.state.value,
-            "failures": cb._failure_count,
-            "last_failure": cb._last_failure_time.isoformat()
-            if cb._last_failure_time
-            else None,
+            "failures": cb.snapshot()["failures"],
+            "last_failure": cb.snapshot()["last_failure"],
         }
         for name, cb in _circuits.items()
     }

@@ -177,3 +177,46 @@ def test_fast_classify_word_boundaries():
     assert _fast_classify("training for farmers") is None
     q_type, _ = _fast_classify("soil ph level")
     assert q_type == "tool"
+
+
+@pytest.mark.asyncio
+async def test_classify_markdown_fenced_json():
+    from langchain_core.messages import AIMessage
+
+    from app.models.classify import classify_query
+
+    fenced_content = """```json
+{"query_type": "scheme", "filters": {"type": "credit_loan"}}
+```"""
+    with patch("app.models.classify.ProviderSelector") as mock_sel:
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=fenced_content))
+        mock_sel_instance = MagicMock()
+        mock_sel_instance.get_chat_llm.return_value = mock_llm
+        mock_sel_instance.resolve_model.return_value = "mistral-small"
+        mock_sel.return_value = mock_sel_instance
+
+        q_type, filters = await classify_query("query that bypasses fast classify")
+        assert q_type == "scheme"
+        assert filters.get("type") == "credit_loan"
+
+
+@pytest.mark.asyncio
+async def test_classify_json_surrounded_by_commentary():
+    from langchain_core.messages import AIMessage
+
+    from app.models.classify import classify_query
+
+    commentary_content = """Here is the result:
+{"query_type": "tool", "filters": {"crop": null}}
+Hope this helps!"""
+    with patch("app.models.classify.ProviderSelector") as mock_sel:
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=commentary_content))
+        mock_sel_instance = MagicMock()
+        mock_sel_instance.get_chat_llm.return_value = mock_llm
+        mock_sel_instance.resolve_model.return_value = "mistral-small"
+        mock_sel.return_value = mock_sel_instance
+
+        q_type, _ = await classify_query("check field sensor status")
+        assert q_type == "tool"

@@ -380,7 +380,14 @@ async def classify_query(
     try:
         result = json.loads(content)
     except json.JSONDecodeError:
-        return _fallback_classify(query)
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if match:
+            try:
+                result = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return _fallback_classify(query)
+        else:
+            return _fallback_classify(query)
 
     if not isinstance(result, dict):
         return _fallback_classify(query)

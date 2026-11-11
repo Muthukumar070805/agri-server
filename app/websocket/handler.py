@@ -127,6 +127,8 @@ async def handle_websocket(websocket: WebSocket, session_id: str = "default"):
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+                    if session.messages and session.messages[-1].get("role") == "user":
+                        session.messages.pop()
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: session_id={session_id}")

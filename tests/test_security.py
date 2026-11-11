@@ -62,6 +62,26 @@ class TestRequestSizeLimit:
             resp = client.post("/chat/text", json=small_payload)
             assert resp.status_code == 200
 
+    def test_negative_content_length_returns_400(self, client):
+        resp = client.post("/chat/text", headers={"Content-Length": "-5"})
+        assert resp.status_code == 400
+        assert "Invalid Content-Length" in resp.json()["detail"]
+
+    def test_non_numeric_content_length_returns_400(self, client):
+        resp = client.post("/chat/text", headers={"Content-Length": "invalid_num"})
+        assert resp.status_code == 400
+        assert "Invalid Content-Length" in resp.json()["detail"]
+
+    def test_chunked_oversized_payload_returns_413(self, client):
+        oversized_data = b"x" * (10 * 1024 + 100)
+        resp = client.post(
+            "/chat/text",
+            content=oversized_data,
+            headers={"Transfer-Encoding": "chunked"},
+        )
+        assert resp.status_code == 413
+        assert "Request too large" in resp.json()["detail"]
+
     def test_cors_middleware_loaded(self, client):
         from main import app
 

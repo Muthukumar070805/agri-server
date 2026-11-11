@@ -86,7 +86,8 @@ graphify-out/
 docs/
 
 # Untracked config & scripts (check notes if required for deployment)
-scripts/
+scripts/*
+!scripts/tts_play.py
 
 # Test & Coverage artifacts
 .coverage

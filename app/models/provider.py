@@ -233,6 +233,7 @@ class ProviderSelector:
                 except Exception as e2:  # noqa: BLE001 - re-raised below
                     logger.error(f"Mistral embeddings also failed: {e2}")
             raise
+            raise
 
     def resolve_model(self, task: str = "classify") -> str:
         """Resolve correct model name for current provider + task."""
